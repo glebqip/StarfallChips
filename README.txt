@@ -9,9 +9,9 @@ Chips have a unique name:chiptype_*_tooltype(_unfinished)
 
 Chiptypes:
   sub - Metrostroi chips
-		(link:http://steamcommunity.com/sharedfiles/filedetails/?id=261801217)
+				(link:http://steamcommunity.com/sharedfiles/filedetails/?id=261801217)
   stargate - CAP chips
-		(link:http://facepunch.com/showthread.php?t=1250181)
+				(link:http://facepunch.com/showthread.php?t=1250181)
   Warning: stargate chips may not work, because they are be created for older version of CAP
 
 Tooltypes:
@@ -22,7 +22,7 @@ Tooltypes:
 lib - special libs(big thanks to Mijyuoon)
 
 dialing_computer
-	Dialing computer screen from first 2 seasons of stargate series
+		Dialing computer screen from first 2 seasons of stargate series
   Inputs:
     Stargare - stargate wirelink input, connect to stargate
     Keyboard - keyboard input, connect to keyboard Memory output
@@ -39,7 +39,7 @@ dialing_computer
       3 - to nox dialing mode
 
 address_book
-	Address book screen from first 2 seasons of stargate series
+		Address book screen from first 2 seasons of stargate series
   Inputs:
     Stargare - stargate wirelink input, connect to stargate
   Outputs:
@@ -50,12 +50,12 @@ address_book
     Enter to send address to Dialing computer(AddrOut), or start dialing if pressed again.
 
 idc_screen
-	IDC screen from first 2 seasons of stargate series
+		IDC screen from first 2 seasons of stargate series
   (unfinished)
 
 vityaz
-	Vityaz screen
-	(http://ic.pics.livejournal.com/drugoi/484155/2426194/2426194_original.jpg)
+		Vityaz screen
+		(http://ic.pics.livejournal.com/drugoi/484155/2426194/2426194_original.jpg)
   Inputs:
     Train - Train input, connect to 81-717 train
   Outputs:
@@ -63,7 +63,7 @@ vityaz
   (unfinished)
 
 autodrive(proc) 
-	81-717 autodrive system(uses autodrive_informator)
+		81-717 autodrive system(uses autodrive_informator)
   Inputs:
     Train     - first wagon input, connect to first wagon
     TrainLast - last wagon input, connect to last wagon
