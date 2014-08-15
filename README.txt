@@ -8,9 +8,12 @@ Uses Mujyuoon starfall:
 Chips have a unique name:chiptype_*_tooltype(_unfinished)
 
 Chiptypes:
-  sub - Metrostroi chips(link:http://steamcommunity.com/sharedfiles/filedetails/?id=261801217)
-  stargate - CAP chips(link:http://facepunch.com/showthread.php?t=1250181)
+  sub - Metrostroi chips
+		(link:http://steamcommunity.com/sharedfiles/filedetails/?id=261801217)
+  stargate - CAP chips
+		(link:http://facepunch.com/showthread.php?t=1250181)
   Warning: stargate chips may not work, because they are be created for older version of CAP
+
 Tooltypes:
   proc - Starfall Processor
   remote - Starfall Remote
@@ -51,7 +54,8 @@ idc_screen
   (unfinished)
 
 vityaz
-	Vityaz screen(http://ic.pics.livejournal.com/drugoi/484155/2426194/2426194_original.jpg)
+	Vityaz screen
+	(http://ic.pics.livejournal.com/drugoi/484155/2426194/2426194_original.jpg)
   Inputs:
     Train - Train input, connect to 81-717 train
   Outputs:
