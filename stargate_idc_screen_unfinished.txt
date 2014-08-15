@@ -1,0 +1,343 @@
+--@name SGC IDC Screen v1
+--@author 
+--@sharedscreen
+--@include Lib/ScrLib
+--@include Lib/RTable
+
+local hook = loadLibrary("hook")
+local timer = loadLibrary("timer")
+local net = loadLibrary("net")
+local snd = loadLibrary "sounds"
+local ME = loadLibrary("ents").self()
+local function chk_gate(g)
+    if g and g.isValid and g:isValid() then
+        local ent = g:entity()
+        return (ent:getClass() == "stargate_sg1" or ent:getClass() == "stargate_atlantis" or ent:getClass() == "stargate_infinity")
+    end
+    return false
+end
+
+local function tonumberb(Bool)
+    return Bool and 1 or 0    
+end
+
+local function tostringb(Bool)
+    return tostring(tonumberb(Bool))
+end
+if SERVER then
+    R = require "Lib/RTable"
+    wire = loadLibrary("wire")
+    sg = loadLibrary("stargate")
+    wire.adjustInputs({"Stargate","Keyboard"},{"wirelink","normal"})
+    
+    local data = R{
+        Initialized = false,
+        Connected = false,
+    }
+    data(function(key,old,new)
+    --print("Changed "..key.." from "..tostring(old).." -> "..tostring(new))
+        if key=="Connected" then
+            net.start("IDC"..ME)
+                net.writeBit(data.Connected)
+            net.send()
+        end      
+            
+        --print(data.RingAngle)
+    end)
+    
+    function getSGConnectedNR()
+        if not wire.ports.Stargate or not chk_gate(wire.ports.Stargate) then data.Connected = false return else data.Connected=true end
+    end
+    
+    timer.simple(0.5,
+        function()
+            --getSGTableNR()
+            getSGConnectedNR()
+            data.Initialized = true
+        end
+    )
+    timer.create("TABLE"..ME:entIndex(),10,0,
+        function()
+            --getSGTableNR()
+        end
+    )
+    
+    timer.create("CONNECTED"..ME:entIndex(),0.5,0,
+        function()
+            getSGConnectedNR()
+        end
+    )
+    
+elseif(CLIENT) then  
+    local ScrLib = require "Lib/ScrLib"
+    local clear = ScrLib.clear
+    local drawLine = ScrLib.drawLine
+    local drawBox = ScrLib.drawRect
+    local drawTextBox = ScrLib.drawRectText
+    local drawTextBoxR = ScrLib.drawRectTextRot
+    local drawBoxOutline = ScrLib.drawRectOL
+    local drawText = ScrLib.drawText
+    local poly = ScrLib.poly
+    local circle = ScrLib.circle
+    local drawCircle = ScrLib.drawCircle
+    local drawPoly = ScrLib.drawPoly
+    local drawPolyOutline = ScrLib.drawPolyOL
+    local drawSGCircle = ScrLib.drawSGCircle
+    local drawSGChevronsBox = ScrLib.drawSGChevronsBox
+    local generateChevPos = ScrLib.generateChevPos
+    local drawSGChevrons = ScrLib.drawSGChevrons
+    local createFont = ScrLib.createFont
+    
+    local box1 = {{},{},{},{}}
+    
+    local White = Color(255,255,255,255)
+    local Grey = Color(175,175,175,255)
+    local Black = Color(0,0,0,255)
+    local Red = Color(255,0,0,255)
+    local Yellow = Color(255,255,0,255)
+    local Green = Color(0,255,0,255)
+    
+    local B1={"PREV","NEXT","FILE","EDIT","VIEW","DETAIL","LOG","HELP","QUIT"}
+    
+    local isDraw=false
+    
+    local TextAlpha = 0
+    local Marlett = {}
+    local SGFont = {}
+    Marlett[8] = createFont("Marlett",8,800)
+    Marlett[11] = createFont("Marlett",11,800)
+    Marlett[17] = createFont("Marlett",17,800)
+    Marlett[18] = createFont("Marlett",18,800)
+    Marlett[20] = createFont("Marlett",20,800)
+    Marlett[26] = createFont("Marlett",26,800)
+    Marlett[30] = createFont("Marlett",30,800)
+    Marlett[40] = createFont("Marlett",40,800)
+    
+    function requreDraw()
+        isDraw=false
+    end
+    
+    local SG = {
+        Connected = false,
+    }
+    
+    function getIDCNetData(Typ)
+        if Typ==0 then
+            SG.Connected=net.readBit()>0
+            requreDraw()
+        end
+    end
+    
+    function randBox1()
+        local RowN = 9
+        for i=0,35 do
+            local ix, iy = i%RowN, math.floor(i/RowN)    
+            box1[iy+1][ix]=math.random() > 0.4
+        end
+        --randNums()
+        requreDraw()
+    end
+    
+    local MUL    
+    function setAlpha()
+        if SG.Connected then return end
+        if(TextAlpha>300) then MUL=false end
+        if(TextAlpha<-15) then MUL=true end
+        if MUL then
+            TextAlpha=TextAlpha+15
+        else
+            TextAlpha=TextAlpha-15
+        end
+        requreDraw()
+    end
+    
+    PolyA={   
+        8,0 
+        ,21,0 
+        ,30,9.5 
+        ,30,22.5 
+        ,21,31 
+        ,8,31 
+        ,0,23 
+        ,0,8
+    }
+    
+    Poly={poly(12,336,PolyA) -- -4 57
+    ,poly(46,336,PolyA)
+    ,poly(12,369,PolyA)
+    ,poly(46,369,PolyA)
+    }
+    
+    local Tri1 = poly(380,177,{-33,50 ,0,0 ,33,50})
+    
+    Text1={"ROTATE","CONTROL","LOG"}
+    Text2={"PAUSE","DISPLAY","LOG"}
+    Text3={"GATE INTEGRITY NORMAL","WORMHOLE STABILITY NORMAL","GATE INTEGRITY WARNING","WORMHOLE STABILITY LOW","WORMHOLE STABILITY CRITICAL"}
+    Text4={"MENU","GRAPH","SPEC","FULL"}
+    RRS={"RECEIVING","REMOTE","SIGNAL"}
+    RSR1={{"SIGNAL","RECOGNIZED"},{"SIGNAL","NOT","RECOGNIZED"},{"SIGNAL","EXPIRED"}}
+    function MainFrame(col1,col2,col3)
+        clear()
+        --drawTextBox(0,81,512,350,White,"idc1")
+        
+        drawBoxOutline(1,83,243,349,col1,1)
+        drawLine(1,98,243,98,col1,1)
+        drawBoxOutline(247,83,264,191,col1,1)
+        drawBox(247,83,72,59,col1)
+        drawBoxOutline(325,98,178,176,col1,1)
+        for i=0,2 do
+            drawBoxOutline(251,217+i*19,70,15,col1,1)            
+        end
+        drawBoxOutline(247,278,264,154,col1,1)
+        drawBoxOutline(250,281,258,86,col1,1)
+        for i=0,2 do
+            drawBoxOutline(4,271+i*18,80,16,col1,1)            
+        end
+        for i=0,2 do
+            drawText(43,278+i*18,Text1[i+1],1,1,col1,Marlett[11])            
+        end
+        
+        for i=0,3 do
+            drawBoxOutline(4+i*59,415,56,12,col1,1)            
+        end
+        for i=0,3 do
+            drawText(30+i*60,420,Text4[i+1],1,1,col1,Marlett[11])            
+        end
+        
+        drawBoxOutline(4,325,80,87,col1,1)
+        
+        drawLine(8,337,8,343,col1,1)
+        drawLine(8,394,8,400,col1,1)
+        drawLine(80,337,80,343,col1,1)
+        drawLine(80,394,80,400,col1,1)
+        
+        drawLine(21,328,32,328,col1,1)
+        drawLine(27,328,27,336,col1,1)
+        drawPolyOutline(Poly[1],col1)
+        drawLine(55,328,66,328,col1,1)
+        drawLine(61,328,61,336,col1,1)
+        drawPolyOutline(Poly[2],col1)
+        drawLine(21,409,32,409,col1,1)
+        drawLine(27,409,27,400,col1,1)
+        drawPolyOutline(Poly[3],col1)
+        drawLine(55,409,66,409,col1,1)
+        drawLine(61,409,61,400,col1,1)
+        drawPolyOutline(Poly[4],col1)
+        
+        drawText(121,90,"GATE INTEGRITY MONITOR",1,1,col1,Marlett[20])
+        
+        for i=0,4 do
+            drawBox(89,360+i*11,10,8,Color(50+i*51,255-i*51,20,255))
+        end
+        for i=0,4 do
+            drawText(102,364+i*11,Text3[i+1],0,1,Grey,Marlett[8])            
+        end
+        
+        for i=0,2 do
+            drawText(284,224+i*19,Text2[i+1],1,1,col1,Marlett[11])            
+        end
+    
+        drawText(375,90,"SIGNAL DATA",1,1,Grey,Marlett[18])
+        drawText(358,104,"DECODING",1,1,Grey,Marlett[11])
+    
+        drawTextBoxR(254,323,86,7,Green,"gui/center_gradient",90)
+        drawText(375,384,"ANALYSING",1,1,Grey,Marlett[30])
+        drawText(375,412,"SIGNAL",1,1,Grey,Marlett[30])
+        
+        drawTextBox(328,112,172,7,Green,"gui/center_gradient")
+        RRSC={Color(255,255,0,255)}
+        drawBoxOutline(247,83,264,192,RRSC[1],12)
+        drawBox(258,94,241,169,Color(202,235,246,255))
+        drawText(380,131,"CAUTION",1,1,Red,Marlett[40])
+        drawPoly(Tri1,Yellow)
+        drawPolyOutline(Tri1,Color(62,96,107,255),3)
+        for i=0,2 do
+            drawText(380,167+i*22,RRS[i+1],1,1,Color(62,96,107,255),Marlett[26])
+        end
+        drawText(380,241,"877032-333-0",1,1,Color(62,96,107,255),Marlett[18])
+        
+        drawBox(249,280,259,87,Black)
+        drawText(343,288,"SIGNAL CODE RESPONSE",1,1,col1,Marlett[17])
+        
+        flr=math.floor
+        local RowN = 7
+        for i=0,13 do
+            local ix, iy = i%RowN, flr(i/RowN)
+            drawBoxOutline(255+ix*36,298+iy*35,30,30,col1)
+        end
+        for i=0,13 do
+            local ix, iy = i%RowN, flr(i/RowN)
+            drawText(270+ix*36,313+iy*35,"1",1,1,Green,Marlett[30])
+        end
+        
+        local RowN = 3
+        for i=0,8 do
+            if not box1[1][i] or not SG.Connected then continue end
+            local ix, iy = i%RowN, flr(i/RowN)
+            drawBox(20+ix*5,344+iy*6,3,3,col2)
+        end
+        for i=0,8 do
+            if not box1[2][i] or not SG.Connected then continue end
+            local ix, iy = i%RowN, flr(i/RowN)
+            drawBox(54+ix*5,344+iy*6,3,3,col2)
+        end
+        for i=0,8 do
+            if not box1[3][i] or not SG.Connected then continue end
+            local ix, iy = i%RowN, flr(i/RowN)
+            drawBox(20+ix*5,377+iy*6,3,3,col2)
+        end
+        for i=0,8 do
+            if not box1[4][i] or not SG.Connected then continue end
+            local ix, iy = i%RowN, flr(i/RowN)
+            drawBox(54+ix*5,377+iy*6,3,3,col2)
+        end
+                
+        if SG.Connected then
+        
+        else
+            if TextAlpha>0 and TextAlpha<255 then
+                TextAlpha1 = TextAlpha
+            elseif TextAlpha>0 then
+                TextAlpha1 = 255
+            else
+                TextAlpha1 = 0
+            end
+            for i=0,1 do
+                local TempCol = Color(Red.r,Red.g,Red.b,i==1 and TextAlpha1 or 255-TextAlpha1)
+                drawBox(124,125+i*96,264,96,Color(0,0,0,i==1 and TextAlpha1 or 255-TextAlpha1))
+                drawBoxOutline(124,125+i*96,264,96,TempCol,2)
+                drawText(256,140+i*96,"STARGATE IS",1,1,TempCol,Marlett[30])
+                drawText(256,161+i*96,"DISCONNECTED",1,1,TempCol,Marlett[30])
+                drawText(256,181+i*96,"SYSTEM WILL BE",1,1,TempCol,Marlett[30])
+                drawText(256,201+i*96,"OFFLINE",1,1,TempCol,Marlett[30])
+            end
+        end
+        isDraw=true  
+    end
+    
+    local Green = {Color(0,153,154,255),Color(75,196,181,255)}
+    local Green2 = {Color(0,153,184,255),Color(75,196,211,255)}
+    local GreenD = Color(12,94,76,255)
+    local Yellow = Color(208,208,144,255)
+    
+    
+     hook.add("net", "IDC"..ME, 
+        function(Name)
+            if Name == "IDC"..ME then
+                getIDCNetData(0)
+            end 
+        end
+    )
+    
+    hook.add("render","IDCdraw"..ME,
+        function()
+            if isDraw then return end
+            MainFrame(Green2[1],Yellow,Green2[2])
+        end
+    )
+    
+    timer.create("alpha",0.05,0,setAlpha)
+    timer.create("box1",0.15,0,randBox1)
+    
+end
+

@@ -1,0 +1,348 @@
+--@name SGC Address Book v1
+--@author 
+--@sharedscreen
+--@include Lib/ScrLib
+--@include Lib/RTable
+hook = loadLibrary("hook")
+timer = loadLibrary("timer")
+net = loadLibrary("net")
+local snd = loadLibrary "sounds"
+local ME = loadLibrary("ents").self()
+
+local function chk_gate(g)
+    if g and g.isValid and g:isValid() then
+        local ent = g:entity()
+        return (ent:getClass() == "stargate_sg1" or ent:getClass() == "stargate_atlantis" or ent:getClass() == "stargate_infinity")
+    end
+    return false
+end
+
+local function tonumberb(Bool)
+    return Bool and 1 or 0    
+end
+
+local function tostringb(Bool)
+    return tostring(tonumberb(Bool))
+end
+
+local function sortAddressList(gate)
+    if not chk_gate(gate) then return end
+    returnAdr = {}
+    for i,v in ipairs(sg.getAddressList(gate:entity())) do 
+        Name,Address,Distance=v[2],v[1]
+        Address = Address:len()<9 and Address.."#" or Address
+        Distance = string.format("%.3f", sg.getGateDistance(gate:entity(),v[1])/1000)
+        Name = #Address>7 and Name.."("..#Address..":"..Address:sub(8,(#Address))..")" or Name
+        returnAdr[i] = {Blocked = v[3]>0,Address = Address,Name=Address,Distance=Distance}
+    end
+    return returnAdr
+end
+
+local C_ChrA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890@#*"
+
+if SERVER then
+    R = require "Lib/RTable"
+    wire = loadLibrary("wire")
+    sg = loadLibrary("stargate")
+    wire.adjustInputs({"Stargate","Keyboard"},{"wirelink","normal"})
+    wire.adjustOutputs({"AddrOut"},{"string"})
+    
+    local data = R{
+        Initialized = false,
+        Connected = false,
+        AB = {},
+        
+        AddrA = 0,
+        AddrC = 0,
+        Out = "",
+    }
+    data(function(key,old,new)
+    --print("Changed "..key.." from "..tostring(old).." -> "..tostring(new))
+        if key=="Connected" then
+            net.start("ABC")
+                net.writeBit(data.Connected)
+            net.send()            
+        elseif key=="AB" then
+            net.start("ABK")
+                net.writeTable(data.AB)
+            net.send()
+        elseif key=="AddrA" or key=="AddrC" then
+            net.start("ABAC")
+                net.writeInt(data.AddrA,16)
+                net.writeInt(data.AddrC,16)
+            net.send()
+        end
+            
+        --print(data.RingAngle)
+    end)
+    
+    function getSGTableNR()
+    if not wire.ports.Stargate or not chk_gate(wire.ports.Stargate) then data.Connected = false return else data.Connected=true end
+        local gate = wire.ports.Stargate
+        data.AB=sortAddressList(gate)
+        if data.AddrC>math.clamp(#data.AB,1,7)-1 then data.AddrC=math.clamp(#data.AB,1,7)-1 end
+        if data.AddrA>math.clamp(#data.AB-7,0,#data.AB-7) then data.AddrA=math.clamp(#data.AB-7,0,#data.AB-7) end
+        --printTable(sotrAddressList(gate))
+    end
+    function getSGConnectedNR()
+        if not wire.ports.Stargate or not chk_gate(wire.ports.Stargate) then data.Connected = false return else data.Connected=true end
+    end
+    timer.simple(0.5,
+        function()
+            getSGTableNR()
+            getSGConnectedNR()
+            data.Initialized = true
+        end
+    )
+    timer.create("TABLE",5,0,
+        function()
+            getSGTableNR()
+        end
+    )
+    timer.create("CONNECTED",0.5,0,
+        function()
+            getSGConnectedNR()
+        end
+    )
+    
+    hook.add("input","Keyboard",
+        function(Name,Value)
+            if Name=="Keyboard" then
+                Key=Value
+                if Key~=0 then snd.emitEntity(ME, "alexalx/glebqip/click"..math.random(1,4)..".mp3") end
+                if data.Connected then
+                    AddrA=data.AddrA
+                    AddrC=data.AddrC
+                    if Key==0 then return end
+                    if Key==20 and AddrA<#data.AB-7 then AddrA=AddrA+1 end
+                    if Key==19 and AddrA>0 then AddrA=AddrA-1 end
+                    if Key==18 and AddrC<math.clamp(#data.AB,1,7)-1 then AddrC=AddrC+1 end
+                    if Key==17 and AddrC>0 then AddrC=AddrC-1 end
+                    local Address=data.AB[data.AddrA+data.AddrC+1].Address
+                    if Key==13 then
+                        if data.Out=="" or data.Out~=Address then
+                            data.Out=Address
+                        else
+                            data.Out=""
+                        end
+                        wire.ports.AddrOut=data.Out
+                    end
+                    data.AddrA = AddrA
+                    data.AddrC = AddrC
+                end
+            end
+        end
+    )
+elseif(CLIENT) then  
+    local ScrLib = require "Lib/ScrLib"
+    local clear = ScrLib.clear
+    local drawLine = ScrLib.drawLine
+    local drawBox = ScrLib.drawRect
+    local drawTextBox = ScrLib.drawRectText
+    local drawBoxOutline = ScrLib.drawRectOL
+    local drawText = ScrLib.drawText
+    local poly = ScrLib.poly
+    local circle = ScrLib.circle
+    local drawCircle = ScrLib.drawCircle
+    local drawPoly = ScrLib.drawPoly
+    local drawPolyOutline = ScrLib.drawPolyOL
+    local drawSGCircle = ScrLib.drawSGCircle
+    local drawSGChevronsBox = ScrLib.drawSGChevronsBox
+    local generateChevPos = ScrLib.generateChevPos
+    local drawSGChevrons = ScrLib.drawSGChevrons
+    local createFont = ScrLib.createFont
+    
+    local White = Color(255,255,255,255)
+    local Black = Color(0,0,0,255)
+    local Red = Color(255,0,0,255)
+    
+    local B1={"PREV","NEXT","FILE","EDIT","VIEW","DETAIL","LOG","HELP","QUIT"}
+    
+    local isDraw=false
+    
+    local TextAlpha = 0
+    local Marlett = {}
+    local SGFont = {}
+    Marlett[8] = createFont("Marlett",8,800)
+    Marlett[10] = createFont("Marlett",10,800)
+    Marlett[11] = createFont("Marlett",11,800)
+    Marlett[13] = createFont("Marlett",13,800)
+    Marlett[30] = createFont("Marlett",30,400)
+    Marlett[35] = createFont("Marlett",35,800)
+    
+    SGFont[15] = createFont("Stargate Address Glyphs Concept",15,400)
+    SGFont[19] = createFont("Stargate Address Glyphs Concept",19,400)
+    
+    function requreDraw()
+        isDraw=false
+    end
+    
+    local SG = {
+        Connected = false,
+        AB = {},
+        Key = 0,
+        AddrA = 0,
+        AddrC = 0,
+    }
+    
+    local Tri1 = poly(224,372,{4,-3 ,0,0 ,4,3})
+    local Tri2 = poly(268,393,{-4,-3 ,0,0 ,-4,3})
+    local Tri3 = {}
+    for i=0,6 do
+        Tri3[i] = poly(416,125+i*31,{7,-4 ,0,0 ,7,4})
+    end
+    
+    function getABNetData(Typ)
+        if Typ==0 then
+            SG.Connected=net.readBit()>0
+            requreDraw()
+        elseif Typ==1 then
+            SG.AB=net.readTable()
+            requreDraw()
+        elseif Typ==2 then
+            SG.AddrA = net.readInt(16)
+            SG.AddrC = net.readInt(16)
+            requreDraw()
+        end
+    end
+    
+    local MUL    
+    function setAlpha()
+        if SG.Connected then return end
+        if(TextAlpha>300) then MUL=false end
+        if(TextAlpha<-15) then MUL=true end
+        if MUL then
+            TextAlpha=TextAlpha+15
+        else
+            TextAlpha=TextAlpha-15
+        end
+        requreDraw()
+    end
+    
+    local randSymbT = {}
+    function randSymb()
+        for i=0,6 do
+            randSymbT[i]=C_ChrA[math.random(1,C_ChrA:len())]
+        end
+        requreDraw()
+    end
+    
+    function MainFrame(col1,col2,col3)
+        clear()
+        drawLine(0,100,510,100,col1,1)
+        drawBox(498,92,14,8,col3)
+        drawBox(430,116,6,6,col3)
+        drawBox(430,329,6,6,col3)
+        drawLine(0,116,425,116,col1,1)
+        drawLine(429,116,499,116,col1,1)
+        drawLine(430,116,430,336,col1,1)
+        drawBox(497,115,6,278,col3)
+        drawLine(1,336,494,336,col1,1)
+        drawLine(1,349,494,349,col1,1)
+        drawLine(2,349,2,394,col1,1)
+        drawBoxOutline(2,408,510,9,col1,1)
+        for i=0,7 do
+            drawLine(57+i*56.7,408,57+i*56.7,416,col1,1)
+        end
+        for i=0,8 do
+            drawText(29+i*56.7,412,B1[i+1],1,1,col1,Marlett[10])
+        end
+        drawBoxOutline(2,372,220,22,col1,1)
+        for i=0,5 do
+            drawLine(33+i*31,372,33+i*31,393,col1,1)
+        end
+        drawBoxOutline(270,372,220,22,col1,1)
+        for i=0,5 do
+            drawLine(301+i*31,372,301+i*31,393,col1,1)
+        end
+        drawText(100,355,"BILINEAR SEARCH ALGORITHM",1,1,col2,Marlett[13])
+        drawText(111,364,"STARGATE ARCHIVE/DATA/PARAMETERS/GLYPHS",1,1,col2,Marlett[8])
+        drawText(411,355,"ACCESSING PENTAGON BACKUP DATA",1,1,col2,Marlett[8])
+        drawText(449,364,"CLEARANCE LEVEL 1",1,1,col2,Marlett[8])
+        drawText(230,371,"1",1,1,col2,Marlett[8])
+        drawText(260,393,"2",1,1,col2,Marlett[8])
+        --EGP:egpTriangle(49,vec2(227,369),vec2(223,372),vec2(227,375))
+        --EGP:egpTriangle(50,vec2(264,390),vec2(268,393),vec2(264,396))
+        drawPoly(Tri1,col3)
+        drawPoly(Tri2,col3)
+        drawText(64,94,"SYSTEM ADMINISTRATOR",1,1,col1,Marlett[10])
+        drawText(143,111,"MISSION LOG/ARCHIVE/PRIMARY/GATE DATABASE/DETAIL",1,1,col1,Marlett[10])
+        AddrA = SG.AddrA
+        AddrC = SG.AddrC
+        if SG.Connected then   
+            for i=0,math.clamp(#SG.AB,1,7)-1 do
+                if #SG.AB==0 then continue end
+                drawBox(414,119+i*31,13,12,col3)
+                drawBox(2,119+i*31,94,29,col2)
+                drawBoxOutline(252,131+i*31,175,17,col1,1)
+                for i1=0,5 do
+                    drawLine(278+i1*25,130+i*31,278+i1*25,147+i*31,col1,1)
+                end
+                drawPoly(Tri3[i],col1)
+                for i1=0,6 do
+                    drawText(265+i1*25,140+i*31,SG.AB[i+1+AddrA].Address[i1+1],1,1,SG.AB[i+1+AddrA].Blocked and Red or White,SGFont[15])
+                end
+                drawText(99,125+i*31,SG.AB[i+1+AddrA].Name,0,1,SG.AB[i+1+AddrA].Blocked and Red or White,Marlett[13])
+                drawText(99,140+i*31,SG.AB[i+1+AddrA].Distance.." kLY",0,1,SG.AB[i+1+AddrA].Blocked and Red or White,Marlett[13])
+                drawBoxOutline(2,119+i*31,425,29,i==AddrC and Red or col1,1)
+            end
+            if #SG.AB==0 then
+                drawBox(124,153,264,133,Black)
+                drawBoxOutline(124,153,264,133,Red,2)
+                drawText(256,175,"THERE ARE",1,1,Red,Marlett[35])  
+                drawText(256,205,"NO STARGATES",1,1,Red,Marlett[35])  
+                drawText(256,235,"IN THIS",1,1,Red,Marlett[35])     
+                drawText(256,265,"NETWORK",1,1,Red,Marlett[35])              
+            end
+        else
+            if TextAlpha>0 and TextAlpha<255 then
+                TextAlpha1 = TextAlpha
+            elseif TextAlpha>0 then
+                TextAlpha1 = 255
+            else
+                TextAlpha1 = 0
+            end
+            for i=0,1 do
+                local TempCol = Color(Red.r,Red.g,Red.b,i==1 and TextAlpha1 or 255-TextAlpha1)
+                drawBox(124,125+i*96,264,96,Color(0,0,0,i==1 and TextAlpha1 or 255-TextAlpha1))
+                drawBoxOutline(124,125+i*96,264,96,TempCol,2)
+                drawText(256,140+i*96,"STARGATE IS",1,1,TempCol,Marlett[30])
+                drawText(256,161+i*96,"DISCONNECTED",1,1,TempCol,Marlett[30])
+                drawText(256,181+i*96,"SYSTEM WILL BE",1,1,TempCol,Marlett[30])
+                drawText(256,201+i*96,"OFFLINE",1,1,TempCol,Marlett[30])
+            end
+        end
+        drawText(390,94,timer.date("%d.%m.%Y"),0,1,col1,Marlett[10])
+        drawText(454,94,timer.date("%H:%M:%S"),0,1,col1,Marlett[10])
+        for i=0,6 do
+            drawText(18+i*31,382,randSymbT[i] or "",1,1,White,SGFont[19])
+        end
+        isDraw=true  
+    end
+    
+    local Green = {Color(0,153,154,255),Color(75,196,181,255)}
+    local Green2 = {Color(0,153,184,255),Color(75,196,211,255)}
+    local GreenD = Color(12,94,76,255)
+    local Yellow = Color(208,208,144,255)
+    
+    
+     hook.add("net", "Recirve", 
+        function(Name)
+            if Name == "ABC" then
+                getABNetData(0)
+            elseif Name == "ABK" then
+                getABNetData(1)
+            elseif Name == "ABAC" then
+                getABNetData(2)
+            end 
+        end
+    )
+    hook.add("render","SGdraw",
+        function()
+            if isDraw then return end
+            MainFrame(Green2[1],Yellow,Green2[2])
+        end
+    )
+    timer.create("alpha",0.05,0,setAlpha)
+    timer.create("randsymb",0.10,0,randSymb)
+end

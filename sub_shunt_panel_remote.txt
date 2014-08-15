@@ -1,0 +1,1224 @@
+--@name Shunt control panel
+--@author glebqip(RUS)
+--@sharedscreen
+--@include Lib/RTable
+--@include Lib/ScrLib
+local sin,cos = math.sin,math.cos
+
+local timer = loadLibrary "timer"
+local input = loadLibrary "input"
+local snd = loadLibrary "sounds"
+local wire = loadLibrary "wire"
+local hook = loadLibrary "hook"
+local ents = loadLibrary "ents"
+local find = loadLibrary "find"
+local net = loadLibrary "net"
+local R = require "Lib/RTable"
+local self = ents.self()
+local ID = self:entIndex ()
+local tonum = tonumber
+local function tonumber(number)
+    if type(number) == "boolean" then 
+        return number and 1 or 0
+    else
+        return tonum(number)
+    end
+end
+
+local Net = {
+    tab = 1,
+    BPSN = false,
+    MK = false,
+    Lighting = false,
+    Left = false,
+    Right = false,
+    VZ1 = false,
+    KRP = false,
+    ResetRP = false,
+    KSN = false,
+    X1 = false,
+    X2 = false,
+    X3 = false,
+    Revers = 1,
+    Batt = 0,
+    Ted = 0,
+    KR = 0,
+    TM = 0,
+    TC = 0,
+    NM = 0,
+    Pos = 2,
+    COpen = false,
+    LKVC = false,
+    LVD = false,
+    ARS = 0,
+    ARSNext = 0,
+    LKVD = false,
+    LSD = false,
+    RK = false,
+    RP = false,
+    LKT = false,
+    LST = false,
+    Speed = 0,
+    RPw = false,
+    VZ1l = false,
+    VZ2 = false,
+    AVU = false,
+    PS = false,
+    PP = false,
+    PT = false,
+    OP = false,
+}
+
+--tablet 996 736
+if SERVER then        
+    local NetR = {}
+    for k,v in pairs(Net) do
+        if k == "tab" then continue end
+        NetR[k] = v
+    end
+    
+    local Traine = nil
+    
+    local data = R{
+        Batt = 0,
+        Ted = 0,
+        KR = 0,
+        TM = 0,
+        TC = 0,
+        NM = 0,
+        Type = 2,
+        LKVC = false,
+        LVD = false,
+        ARS = 0,
+        ARSNext = 0,
+        LKVD = false,
+        LSD = false,
+        RK = false,
+        RP = false,
+        LKT = false,
+        LST = false,
+        Speed = 0,
+        RPw = false,
+        VZ1l = false,
+        VZ2 = false,
+        AVU = false,
+        PS = false,
+        PP = false,
+        PT = false,
+        OP = false,
+    }
+    
+    local function tab()
+        if not Traine or not Traine:isValid() then return end
+        Train = Traine:wirelink()
+        Train[27] = tonumber(Net.BPSN)
+        Train[23] = tonumber(Net.MK)
+        Train[656] = tonumber(Net.Lighting)
+        
+        Train[31] = tonumber(Net.Left)
+        Train[32] = tonumber(Net.Right)
+        Train[29] = tonumber(Net.VZ1)
+        
+        Train[17] = tonumber(Net.ResetRP)
+        Train[557] = tonumber(Net.KSN)
+        
+        Train[1] = tonumber(Net.X1 or Net.X2)*(Net.KRP and -10 or 1)
+        Train[2] = tonumber(Net.X2)*(Net.KRP and -10 or 1)
+        Train[3] = tonumber(Net.X2)*(Net.KRP and -10 or 1)
+        Train[20] = tonumber(Net.X1 or Net.X2 or Net.X3)*(Net.KRP and -10 or 1)
+        
+        Train[14] = tonumber(Net.KRP)
+        
+        if Net.Revers == 2 then
+            Train[5] = 1
+        else
+            Train[5] = 0
+        end
+        if Net.Revers == 0 then
+            Train[4] = 1
+        else
+            Train[4] = 0
+        end
+        
+        Train[669] = Net.Pos
+        Train[447] = tonumber(Net.COpen)
+    end
+    
+    local function sendToClient(str,reload)
+        if Net[str] == nil then return end
+        local typ = type(Net[str])
+        if not net.canSend() then timer.simple(0.5,function() sendToClient(str) end) return end
+        net.start("net"..ID)
+            net.writeString(typ)
+            net.writeString(str)
+            if typ == "number" then
+                net.writeInt(Net[str],32)
+            end
+            if typ == "boolean" then
+                net.writeBit(Net[str])
+            end
+        net.send()
+        if reload then tab() end
+    end
+    
+    local function resetAll()
+        for k,v in pairs(Net) do
+            Net[k] = NetR[k]
+            sendToClient(k,true)
+        end
+    end
+    
+    local function Tumber(name,ply,butt)
+        Net[name] = not Net[name]
+        if butt then
+            if Net[name] then
+                snd.emitEntity(ply, "subway_trains/switch_13.wav")
+            else
+                snd.emitEntity(ply, "subway_trains/switch_14.wav")
+            end            
+        else snd.emitEntity(ply, "subway_trains/switch_"..math.random(2,3)..".wav") end
+        sendToClient(name,true)
+    end
+    
+    local function Button(name,ply,state,tumb)
+        Net[name] = state
+        if tumb then snd.emitEntity(ply, "subway_trains/switch_"..math.random(2,3)..".wav") else
+            if state then
+                snd.emitEntity(ply, "subway_trains/switch_13.wav")
+            else
+                snd.emitEntity(ply, "subway_trains/switch_14.wav")
+            end
+        end
+        sendToClient(name,true)
+    end
+    
+    local function Revers(name,ply,state)
+        if (Net[name]>0 and not state) or (state and Net[name]<2) then
+            Net[name] = Net[name]+(state and 1 or -1)
+            snd.emitEntity(ply, "subway_trains/switch_"..math.random(2,3)..".wav")
+            sendToClient(name,true)
+        end
+    end
+    
+    local BlockConnect = false
+    hook.add("KeyPress","Press"..ID, function(ply, key)
+        BlockConnect = false
+        if ply ~= self:owner() then return end
+        if key == 32 then
+            local weapon = ply:getActiveWeapon()
+            if weapon:find("sf_remote") then
+                if Traine and Traine:isValid() then 
+                    resetAll()
+                    print("Disconnected from ["..Traine:getClass()..","..Traine:entIndex().."].") 
+                    Traine = nil 
+                    BlockConnect = true
+                end
+            end
+        end
+    end)
+         
+    hook.add("PlayerUse", "Use"..ID, function(ply, ent)
+        if ply ~= self:owner() or BlockConnect then return end
+        local weapon = ply:getActiveWeapon()
+        if weapon:find("sf_remote") then
+            if ent and ent:isValid() and ent:getClass():find("gmod_subway_") and Traine ~= ent then 
+                Traine = ent 
+                print("Successfully connected to ["..ent:getClass()..","..ent:entIndex().."].")
+                tab()
+            end
+        end
+    end)
+    
+    input.sendToClient(false)
+    hook.add("keyinput", "Key"..ID, function(ply, key, isdown)
+        local keyChr = input.keyToChar(ply, key, true)
+        if not keyChr then return end
+        local chr = string.char(keyChr):upper()
+        if isdown then
+            if tonumber(chr) and tonumber(chr)<6 and tonumber(chr)>0 then
+                Net.tab = tonumber(chr)
+                sendToClient("tab",true)
+            end
+        end
+        if Traine == nil or not Traine:isValid() then return end
+        --if Net.tab == 1 then
+            if isdown then
+                if chr == "Q" then
+                    Tumber("BPSN",ply)
+                end
+                if chr == "W" then
+                    Tumber("MK",ply)
+                end
+                if chr == "E" then
+                    Tumber("Lighting",ply)
+                end
+                if chr == "A" then
+                    Tumber("KRP",ply,true)
+                end
+                if chr == "Z" then
+                    Tumber("X1",ply,true)
+                end
+                if chr == "F" then
+                    Revers("Revers",ply,false)
+                end
+                if chr == "G" then
+                    Revers("Revers",ply,true)
+                end
+                if chr == ";" and 1<Net.Pos then
+                    Net.Pos = Net.Pos - 1
+                    sendToClient("Pos",true)
+                    snd.emitEntity(ply, "subway_trains/switch_1.wav")
+                end
+                if chr == "'" and ((data.Type==1 and Net.Pos< 5) or (data.Type == 2 and Net.Pos<7)) then
+                    Net.Pos = Net.Pos + 1
+                    sendToClient("Pos",true)
+                    snd.emitEntity(ply, "subway_trains/switch_1.wav")
+                end
+                if chr == "L" then
+                    Net.COpen = not Net.COpen
+                    sendToClient("COpen",true)
+                    snd.emitEntity(ply, "subway_trains/pneumo_"..(Net.COpen and 3 or 4)..".wav")
+                end
+            end
+            if chr == "Y" then
+                Button("VZ1",ply,isdown,true)
+            end
+            if chr == "R" then
+                Button("Left",ply,isdown,true)
+            end
+            if chr == "T" then
+                Button("Right",ply,isdown,true)
+            end
+            if chr == "S" then
+                Button("ResetRP",ply,isdown)
+            end
+            if chr == "D" then
+                Button("KSN",ply,isdown)
+            end
+            if chr == "X" then
+                Button("X2",ply,isdown)
+            end
+            if chr == "C" then
+                Button("X3",ply,isdown)
+            end
+        --end
+    end)
+    
+    data(function(key,old,new)
+        Net[key] = new
+        sendToClient(key)
+    end)
+    
+    local function getInputs()
+        if Traine and Traine:isValid() then 
+            Train[365] = tonumber(Net.tab == 4)
+            local Train = Traine:wirelink()
+            data.Batt = Train[419]*Train[912]
+            data.KR = Train[470]
+            data.Ted = math.floor(Train[456]/5)*5
+            data.TM = math.floor(Train[670]*100/5)*5
+            data.TC = math.floor(Train[671]*100/5)*5
+            data.NM = math.floor(Train[674]*100/5)*5
+            data.LKVC = Train[614] == 0
+            data.LVD = Train[1] > 0
+            data.LKVD = Train[373] == 0
+            data.LSD = Train[11] == 0
+            data.RK = Train[2] > 0
+            data.RP = Train[658] > 0
+            data.LKT = (Train[372] and Train[374]) and (Train[372] > 0 or Train[374] > 0)
+            data.LST = Train[6] > 0
+            data.RPw = Train[657] > 0
+            data.VZ1l = Train[680] > 0
+            data.VZ2 = Train[685] > 0
+            data.AVU = Train[661] > 0
+            data.PS = math.round(Train[688]) == 1
+            data.PP = math.round(Train[688]) == 2
+            data.PT = math.round(Train[688]) == 3
+            data.OP = Train[539]>0 or Train[549]>0
+            
+            data.Speed = Train[376]
+            
+            local CSP = Train[384] or 0
+            data.ARS = CSP>70 and 8 or 
+                (CSP>60 and 7 or
+                (CSP>40 and 6 or 
+                (CSP>0 and 4 or
+                (Train[381]~=0 and 0 or 2))))
+                
+            local NSP = Train[385] or 0
+            data.ARSNext = NSP>70 and 8 or 
+                (NSP>60 and 7 or
+                (NSP>40 and 6 or 
+                (NSP>0 and 4 or 2)))
+            --Type = Train[664],
+        else 
+            data.Batt = 0 
+            data.KR = 0 
+            data.Ted = 0
+            data.TM = 0
+            data.TC = 0
+            data.NM = 0
+            data.LKVC = false
+            data.LN = false
+            data.LVD = false
+            data.ARS = 0
+            data.ARSNext = 0
+            data.LKVD = false
+            data.LSD = false
+            data.LSD = false
+            data.RK = false
+            data.RP = false
+            data.RP = false
+            data.LKT = false
+            data.LST = false
+            data.Speed = 0
+            data.RPw = false
+            data.VZ1l = false
+            data.VZ2 = false
+            data.AVU = false
+            data.PS = false
+            data.PP = false
+            data.PT = false
+            data.OP = false
+            --Type = 1,
+        end
+        if Traine and not Traine:isValid() then
+            resetAll()
+            Traine = nil
+        end
+    end
+    timer.create("Timer2"..ID,0,0.999,getInputs)
+else
+    local scr = require "Lib/ScrLib"
+    
+    local dat = {
+        Batt = 0,
+        Ted = 0,
+        KR = 0,
+        TM = 0,
+        TC = 0,
+        NM = 0,
+        Type = 2,
+    }
+    
+    local Coolvetica = {} 
+    Coolvetica[20] = scr.createFont("Coolvetica",20,800)
+    Coolvetica[25] = scr.createFont("Coolvetica",25,800)
+    
+    local ArialNarrow = {} 
+    ArialNarrow[20] = scr.createFont("Arial Narrow",20,800)
+    ArialNarrow[24] = scr.createFont("Arial Narrow",24,800)
+    ArialNarrow[30] = scr.createFont("Arial Narrow",30,800)
+    
+    local col1 = Color(255,136,0,255)
+    --local col2 = Color(232,232,0,255)
+    local col3 = Color(255,255,139,255)
+    local Black = Color(0,0,0,255)
+    local White = Color(255,255,255,255)
+    
+    local Tumbler = {}
+    for i=1,6 do
+        local x1
+        local y1
+        if i<4 then x1 = i-1 else x1 = i-4 end
+        if i<4 then y1 = 0 else y1 = 1 end
+        table.insert(Tumbler,{
+            scr.circle(5+57+x1*127,81+105+y1*135,9,9,9),
+            scr.circle(5+57+x1*127,81+105+y1*135,12,12,11),
+            scr.circle(5+57+x1*127,81+105+y1*135,16,16,13),
+            scr.circle(5+57+x1*127,81+105+y1*135,18,18,15),
+            scr.circle(5+57+x1*127,81+105+y1*135,23,23,20),
+            scr.circle(5+57+x1*127,81+105+y1*135,25,25,20),
+        })
+    end
+    
+    local TumblerC = {
+        Color(0,0,0,255),
+        Color(96,96,96,255),
+        Color(75,75,75,255),
+        Color(80,80,80,255),
+        Color(0,0,0,255),
+        Color(50,50,50,255),
+    }
+    Button = {}
+    for i=1,6 do
+        local x1
+        local y1
+        if i<4 then x1 = i-1 else x1 = i-4 end
+        if i<4 then y1 = 0 else y1 = 1 end
+        table.insert(Button,{
+            scr.circle(5+63+x1*113,81+388+y1*152,30,30,20),
+            scr.circle(5+63+x1*113,81+388+y1*152,33,33,20),
+            scr.circle(5+63+x1*113,81+388+y1*152,43,43,20),
+        })
+    end
+    
+    --buttons
+    local ButtonC = {{
+        Color(40,40,40,255),
+        Color(0,0,0,255),
+        Color(71,60,54,255),
+    },{
+        Color(15,15,15,255),
+        Color(0,0,0,255),
+        Color(71,60,54,255),
+    }}
+    
+    local ButtonCr = {{
+        Color(173,50,50,255),
+        Color(0,0,0,255),
+        Color(71,60,54,255),
+    },{
+        Color(73,24,25,255),
+        Color(0,0,0,255),
+        Color(71,60,54,255),
+    }}
+    --//buttons
+    
+    local voltCircle = scr.circle(5+355+127,81+213,10,10,20)
+    
+    --tumbler
+    local tumb = {}
+    
+    for i=1,2 do
+        Minus = i == 1 and -1 or 1
+        table.insert(tumb,i,{
+        -7,0,
+        -10,-30*Minus,
+        -9,-31*Minus,
+        -8,-32*Minus,
+        -7,-33*Minus,
+        -6,-34*Minus,
+        -5,-35*Minus,
+        -4,-36*Minus,
+        -3,-37*Minus,
+        -0,-38*Minus,
+        3,-37*Minus,
+        4,-36*Minus,
+        5,-35*Minus,
+        6,-34*Minus,
+        7,-33*Minus,
+        8,-32*Minus,
+        9,-31*Minus,
+        10,-30*Minus,
+        7,0
+        })
+    end
+    local tumbler = {
+        {scr.poly(5+57,81+105,tumb[2]),scr.poly(5+57,81+105,tumb[1])},
+        {scr.poly(5+184,81+105,tumb[2]),scr.poly(5+184,81+105,tumb[1])},
+        {scr.poly(5+311,81+105,tumb[2]),scr.poly(5+311,81+105,tumb[1])},
+        {scr.poly(5+57,81+240,tumb[2]),scr.poly(5+57,81+240,tumb[1])},
+        {scr.poly(5+184,81+240,tumb[2]),scr.poly(5+184,81+240,tumb[1])},
+        {scr.poly(5+311,81+240,tumb[2]),scr.poly(5+311,81+240,tumb[1])},
+    }
+    --//tumbler
+    
+    local function createButton(x,y,x1,y1,text,size,active)
+        if not active then scr.drawRect(x,y,x1,y1,col1,5) end
+        scr.drawRectOL(x,y,x1,y1,col1,5)
+        scr.drawText(x1/2+x,y1/2+y,text,1,1,active and col3 or Black,ArialNarrow[size])
+    end
+    
+    --revers
+    local ReversC = scr.circle(5+479,81+433,47,47,20)
+    
+    local r = {
+        30,-50,
+        0,-70,
+        -30,-50,
+        -10,73,
+        10,73,
+    }
+    
+    local Rev = {{},{},{}}
+    for i = 1,3 do
+        for i1=1,#r,2 do
+            local rad = math.rad(-90+i*45)
+            table.insert(Rev[i],r[i1]*cos(rad) - r[i1+1]*sin(rad))
+            table.insert(Rev[i],r[i1]*sin(rad) + r[i1+1]*cos(rad))
+        end
+    end
+    local Revers = {scr.poly(5+479,81+433,Rev[1]),scr.poly(5+479,81+433,Rev[2]),scr.poly(5+479,81+433,Rev[3])}
+    --//revers
+    
+    local tab = {}
+    
+        
+    local ax = 5
+    local ay = 81
+    tab[1] = function()
+        scr.drawRect(5,81,621,646,Color(170,170,170,255),5)
+        scr.drawRectOL(11,86,611,636,Color(200,200,200,255),5)
+        scr.drawRectOL(5,81,621,646,col1,5)
+        
+        for i=#Tumbler[1], 1,-1 do
+            scr.drawPoly(Tumbler[1][i],TumblerC[i])
+        end
+        scr.drawPoly(tumbler[1][2-tonumber(Net.BPSN)],Color(0,0,0,255))
+        scr.drawText(ax+57,ay+150,"BPSN",1,1,Color(0,0,0,255),ArialNarrow[24])
+        
+        scr.drawText(ax+184,ay+60,"MOTOR",1,1,Color(0,0,0,255),ArialNarrow[24])
+        for i=#Tumbler[2], 1,-1 do
+            scr.drawPoly(Tumbler[2][i],TumblerC[i])
+        end
+        scr.drawPoly(tumbler[2][2-tonumber(Net.MK)],Color(0,0,0,255))
+        scr.drawText(ax+184,ay+150,"COMPRESSOR",1,1,Color(0,0,0,255),ArialNarrow[24])
+        
+        scr.drawText(ax+311,ay+60,"EMERGENCY",1,1,Color(0,0,0,255),ArialNarrow[24])
+        for i=#Tumbler[3], 1,-1 do
+            scr.drawPoly(Tumbler[3][i],TumblerC[i])
+        end
+        scr.drawPoly(tumbler[3][2-tonumber(Net.Lighting)],Color(0,0,0,255))
+        scr.drawText(ax+311,ay+150,"LIGHTING",1,1,Color(0,0,0,255),ArialNarrow[24])
+        
+        for i=#Tumbler[4], 1,-1 do
+            scr.drawPoly(Tumbler[4][i],TumblerC[i])
+        end
+        scr.drawPoly(tumbler[4][2-tonumber(Net.Left)],Color(0,0,0,255))
+        scr.drawText(ax+57,ay+150+135,"LEFT",1,1,Color(0,0,0,255),ArialNarrow[24])
+        
+        scr.drawText(ax+120,ay+60+135,"DOORS",1,1,Color(0,0,0,255),ArialNarrow[24])
+        
+        for i=#Tumbler[5], 1,-1 do
+            scr.drawPoly(Tumbler[5][i],TumblerC[i])
+        end
+        scr.drawPoly(tumbler[5][2-tonumber(Net.Right)],Color(0,0,0,255))
+        scr.drawText(ax+184,ay+150+135,"RIGHT",1,1,Color(0,0,0,255),ArialNarrow[24])
+        
+        for i=#Tumbler[6], 1,-1 do
+            scr.drawPoly(Tumbler[6][i],TumblerC[i])
+        end
+        scr.drawPoly(tumbler[6][2-tonumber(Net.VZ1)],Color(0,0,0,255))
+        scr.drawText(ax+311,ay+150+135,"VZ1",1,1,Color(0,0,0,255),ArialNarrow[24])
+        
+        
+        for i=#Button[1], 1,-1 do
+            scr.drawPoly(Button[1][i],ButtonC[tonumber(Net.KRP)+1][i])
+        end
+        scr.drawText(ax+63,ay+446,"KRP",1,1,Color(0,0,0,255),ArialNarrow[24])
+        
+        scr.drawText(ax+176,ay+330,"RP",1,1,Color(0,0,0,255),ArialNarrow[24])
+        for i=#Button[2], 1,-1 do
+            scr.drawPoly(Button[2][i],ButtonC[tonumber(Net.ResetRP)+1][i])
+        end
+        scr.drawText(ax+176,ay+446,"RESET",1,1,Color(0,0,0,255),ArialNarrow[24])
+        
+        for i=#Button[3], 1,-1 do
+            scr.drawPoly(Button[3][i],ButtonC[tonumber(Net.KSN)+1][i])
+        end
+        scr.drawText(ax+289,ay+446,"KSN",1,1,Color(0,0,0,255),ArialNarrow[24])
+        
+        for i=#Button[4], 1,-1 do
+            scr.drawPoly(Button[4][i],ButtonC[tonumber(Net.X1)+1][i])
+        end
+        scr.drawText(ax+63,ay+598,"X1",1,1,Color(0,0,0,255),ArialNarrow[24])
+        
+        for i=#Button[5], 1,-1 do
+            scr.drawPoly(Button[5][i],ButtonCr[tonumber(Net.X2)+1][i])
+        end
+        scr.drawText(ax+176,ay+598,"X2",1,1,Color(0,0,0,255),ArialNarrow[24])
+        
+        for i=#Button[6], 1,-1 do
+            scr.drawPoly(Button[6][i],ButtonCr[tonumber(Net.X3)+1][i])
+        end
+        scr.drawText(ax+289,ay+598,"X3",1,1,Color(0,0,0,255),ArialNarrow[24])
+        
+        local X = ax+386--+106
+        local Y = ay+49--+174
+        scr.drawRect(X-10,Y,213,191,Color(20,20,20,255))
+        scr.drawRect(X+7,Y+17,179,99,Color(225,225,225,255))
+        for i=0,30 do
+            local big = i%10 == 0
+            local middle = i%2 == 0
+            local rad = math.rad(180-(360/155)*i+35)
+            local CLineS=sin(rad)
+            local CLineC=cos(rad)
+            local RADX = big and 125 or middle and 120 or 115
+            local RADY = 110
+            scr.drawLine(CLineS*RADX+X+96,CLineC*RADX+Y+164,CLineS*RADY+X+96,CLineC*RADY+Y+164,Color(0,0,0,255),big and 4 or middle and 3 or 2)
+            if i%30 == 0 then 
+                scr.drawText(CLineS*100+X+96,CLineC*100+Y+164,tostring(i*5),1,1,Color(0,0,0,255),ArialNarrow[24])
+            end
+            
+            if big and i>1 and i<30 then 
+                scr.drawText(CLineS*137+X+96,CLineC*137+Y+164,tostring(i*5/10),1,1,Color(0,0,0,255),ArialNarrow[24])
+            end
+        end
+        
+        dat.Batt = (dat.Batt + (Net.Batt-dat.Batt)*0.1)
+        if dat.Batt > 150 then dat.Batt = 150 end
+        local rad = math.rad((180-360)+35-dat.Batt/150*70)
+        scr.drawLine(X+96,Y+164,sin(rad)*108+X+96,cos(rad)*108+Y+164,Color(20,20,20,255),3)
+        scr.drawPoly(voltCircle,Color(40,40,40,255))
+        scr.drawLine(X+86,Y+164,X+106,Y+164,Color(20,20,20,255),3)
+        scr.drawText(X+96,Y+99,"V",1,1,Black,ArialNarrow[30])
+        scr.drawText(X+96,Y+201,"BATTERY VOLTAGE",1,1,Black,ArialNarrow[24])
+        
+        scr.drawPoly(ReversC,Color(0,0,0,255))
+        scr.drawPolyOL(ReversC,Color(100,100,100,255)) --519 393
+        scr.drawText(ax+500,ay+350,"FORWARD",0,1,Color(0,0,0,255),ArialNarrow[20])
+        scr.drawText(ax+420,ay+350,"BACKWARD",1,1,Color(0,0,0,255),ArialNarrow[20])
+        scr.drawPoly(Revers[Net.Revers+1],Color(0,0,0,255))
+        scr.drawPolyOL(Revers[Net.Revers+1],Color(100,100,100,255))
+    end
+    
+    local ampCircle = scr.circle(ax+116,ay+174,10,10,20)
+    local voltCircle = scr.circle(ax+116+223,ay+174,10,10,20)
+    local engCircle = scr.circle(ax+116+446,ay+174,10,10,20)
+    
+    local Man1 = {}
+    table.insert(Man1,scr.circle(ax+562,ay+323,85,85,30))
+    table.insert(Man1,scr.circle(ax+562,ay+323,90,90,30))
+    
+    local Man2 = {}
+    table.insert(Man2,scr.circle(ax+562,ay+533,85,85,30))
+    table.insert(Man2,scr.circle(ax+562,ay+533,90,90,30))
+    
+    local ManC = {
+        Color(255,255,255,255),
+        Color(50,50,50,255)
+    }
+    local Strelka = {{
+        70,0,
+        50,-6,
+        30,-4,
+        0,-4,
+        0,4,
+        30,4,
+        50,6,
+        0,-4,
+        -20,-4,
+        -20,4,
+        0,4,
+    },{
+        -20,-4,
+        -40,-8,
+        -40,8,
+        -20,4,
+    }}
+       
+    local Tmc = scr.circle(ax+562,ay+323,10,10,8)
+    local Tcc = scr.circle(ax+562,ay+533,10,10,8)
+    
+    function createArrow(ang)   
+        local tabl = {{},{},{}}   
+        for n=1,#Strelka do
+            for i=1,#Strelka[n],2 do
+                local rad = math.rad(ang-220)
+                table.insert(tabl[n],Strelka[n][i]*cos(rad) - Strelka[n][i+1]*sin(rad))
+                table.insert(tabl[n],Strelka[n][i]*sin(rad) + Strelka[n][i+1]*cos(rad))
+            end
+        end
+        return tabl
+    end
+    
+    local Cran334C = {
+        scr.circle(ax+233,ay+423,18,18,10),
+        scr.circle(ax+233,ay+423,18,18,10,45),
+        scr.circle(ax+333,ay+423,20,20,20),
+        scr.circle(ax+233,ay+423,40,40,6),
+        scr.circle(ax+333,ay+423,30,30,6),
+        scr.circle(ax+333,ay+423,40,40,20),
+    }
+    local Col334C = {
+        Color(100,0,0,255),
+        Color(100,0,0,255),
+        Color(100,100,100,255),
+        Color(100,100,100,255),
+        Color(150,150,150,255),
+        Color(100,100,100,255),
+    }   
+    local Cran334P = {
+        14,0,
+        20,120,
+        -20,120,
+        -14,0
+    }
+    
+    local ang3 = {90,50,30,10,-30}
+    local Cran334Pr = {{},{},{},{},{}}
+    local Cran334 = {}
+    local Cran334C2 = {}
+    local Cran334C3 = {}
+    for n=1,#ang3 do
+        for i=1,#Cran334P,2 do
+            local rad = math.rad(ang3[n])
+            table.insert(Cran334Pr[n],Cran334P[i]*cos(rad) - Cran334P[i+1]*sin(rad))
+            table.insert(Cran334Pr[n],Cran334P[i]*sin(rad) + Cran334P[i+1]*cos(rad))
+        end
+        table.insert(Cran334,scr.poly(ax+233,ay+423,Cran334Pr[n]))
+        local rad = math.rad(-ang3[n])
+        table.insert(Cran334C2,scr.circle(sin(rad)*120+ax+233,cos(rad)*120+ay+423,20,20,10))
+        table.insert(Cran334C3,scr.circle(ax+233,ay+423,15,15,6,ang3[n]))
+    end
+    local C334t = {"I","IIa","III","IV","V"}
+    
+    local razob = {}--nil,{}}
+    table.insert(razob,scr.circle(ax+233+100,ay+423-160,15,15,4,90))
+    table.insert(razob,{})
+    for n=0,1 do
+        local rad = math.rad(-90+(n*90))
+        table.insert(razob[2],scr.circle(sin(rad)*80+ax+233+100,cos(rad)*80+ay+423-160,10,10,10))
+    end
+    
+    local ang1 = {100,90,80,60,40,20,0}
+    local Cran013P = {
+        10,0,
+        20,130,
+        -20,130,
+        -10,0
+    }
+        
+    local Cran013C = {
+        scr.circle(ax+333,ay+423,15,15,10),
+        scr.circle(ax+333,ay+423,30,30,10),
+        scr.circle(ax+333,ay+423,30,30,10,45),
+    }
+    
+    local Col013C = {
+        Color(110,50,50,255),
+        Color(130,60,60,255),
+    }
+    --local Cran013 = scr.poly(ax+333,ay+423,Cran013P)
+    local Cran013 = {}
+    local Cran013C2 = {}
+    local Cran013C3 = {{},{},{},{},{},{},{}}
+    
+    local Cran013Pr = {{},{},{},{},{},{},{}}
+    for n=1,#ang1 do
+        for i=1,#Cran013P,2 do
+            local rad = math.rad(ang1[n])
+            table.insert(Cran013Pr[n],Cran013P[i]*cos(rad) - Cran013P[i+1]*sin(rad))
+            table.insert(Cran013Pr[n],Cran013P[i]*sin(rad) + Cran013P[i+1]*cos(rad))
+        end
+        for i=1,8 do
+            local rad = math.rad(180-(360/8)*i-ang1[n])
+            table.insert(Cran013C3[n],scr.circle(sin(rad)*15+ax+333,cos(rad)*15+ay+423,5,5,5))
+        end
+        table.insert(Cran013,scr.poly(ax+333,ay+423,Cran013Pr[n]))
+        local rad = math.rad(-ang1[n])
+        table.insert(Cran013C2,scr.circle(sin(rad)*130+ax+333,cos(rad)*130+ay+423,20,20,10))
+    end
+    local C013t = {"I","II","III","IV","V ","VI ","VI"}
+    
+    tab[3] = function()
+        scr.drawRectOL(5,81,681,646,col1,5)
+        
+        local X = ax+20
+        local Y = ay+10
+        --249 39
+        scr.drawRect(X-10,Y,213,191,Color(20,20,20,255))
+        scr.drawRect(X+7,Y+17,179,99,Color(225,225,225,255))
+        for i=0,30 do
+            local big = i%10 == 0
+            local middle = i%2 == 0
+            local rad = math.rad(180-(360/155)*i+35)
+            local CLineS=sin(rad)
+            local CLineC=cos(rad)
+            local RADX = big and 125 or middle and 120 or 115
+            local RADY = 110
+            scr.drawLine(CLineS*RADX+X+96,CLineC*RADX+Y+164,CLineS*RADY+X+96,CLineC*RADY+Y+164,Color(0,0,0,255),big and 4 or middle and 3 or 2)
+            if i%30 == 0 then 
+                scr.drawText(CLineS*100+X+96,CLineC*100+Y+164,tostring(i*5),1,1,Color(0,0,0,255),ArialNarrow[24])
+            end
+            
+            if big and i>1 and i<30 then 
+                scr.drawText(CLineS*137+X+96,CLineC*137+Y+164,tostring(i*5/10),1,1,Color(0,0,0,255),ArialNarrow[24])
+            end
+        end
+        
+        dat.Batt = (dat.Batt + (Net.Batt-dat.Batt)*0.4)
+        if dat.Batt > 150 then dat.Batt = 150 end
+        local rad = math.rad((180-360)+35-dat.Batt/150*72)
+        scr.drawLine(X+96,Y+164,sin(rad)*108+X+96,cos(rad)*108+Y+164,Color(20,20,20,255),3)
+        scr.drawPoly(ampCircle,Color(40,40,40,255))
+        scr.drawLine(X+86,Y+164,X+106,Y+164,Color(20,20,20,255),3)
+        scr.drawText(X+96,Y+99,"V",1,1,Black,ArialNarrow[30])
+        scr.drawText(X+96,Y+201,"BATTERY VOLTAGE",1,1,White,ArialNarrow[24])
+        
+        local X = ax+243--+106 5+355+127,81+213
+        local Y = ay+10--+174
+        --249 39
+        scr.drawRect(X-10,Y,213,191,Color(20,20,20,255))
+        scr.drawRect(X+7,Y+17,179,99,Color(225,225,225,255))
+        for i=0,50 do
+            local big = i%10 == 0
+            local middle = i%5 == 0
+            local rad = math.rad(180-(360/250)*i+35)
+            local CLineS=sin(rad)
+            local CLineC=cos(rad)
+            local RADX = big and 125 or middle and 120 or 115
+            local RADY = 110
+            scr.drawLine(CLineS*RADX+X+96,CLineC*RADX+Y+164,CLineS*RADY+X+96,CLineC*RADY+Y+164,Color(0,0,0,255),big and 4 or middle and 3 or 2)
+            if i%50 == 0 then 
+                scr.drawText(CLineS*100+X+96,CLineC*100+Y+164,tostring(i*2/100),1,1,Color(0,0,0,255),ArialNarrow[24])
+            end
+            
+            if big and i>1 and i<50 then 
+                scr.drawText(CLineS*137+X+96,CLineC*137+Y+164,tostring(i*2/100),1,1,Color(0,0,0,255),ArialNarrow[24])
+            end
+        end
+        
+        dat.KR = (dat.KR + (Net.KR-dat.KR)*0.4)
+        if dat.KR > 1000 then dat.Kr = 1000 end
+        local rad = math.rad((180-360)+35-dat.KR/1000*72)
+        scr.drawLine(X+96,Y+164,sin(rad)*108+X+96,cos(rad)*108+Y+164,Color(20,20,20,255),3)
+        scr.drawPoly(voltCircle,Color(40,40,40,255))
+        scr.drawLine(X+86,Y+164,X+106,Y+164,Color(20,20,20,255),3)
+        scr.drawText(X+96,Y+99,"kV",1,1,Black,ArialNarrow[30])
+        scr.drawText(X+96,Y+201,"NETWORK VOLTAGE",1,1,White,ArialNarrow[24])
+        
+        local X = ax+466
+        local Y = ay+10
+        --249 39
+        scr.drawRect(X-10,Y,213,191,Color(20,20,20,255))
+        scr.drawRect(X+7,Y+17,179,99,Color(225,225,225,255))
+        for i=-10,10 do
+            local big = i%5 == 0
+            local rad = math.rad(180-(360/100)*i)
+            local CLineS=sin(rad)
+            local CLineC=cos(rad)
+            local RADX = big and 125 or 120
+            local RADY = 110
+            scr.drawLine(CLineS*RADX+X+96,CLineC*RADX+Y+164,CLineS*RADY+X+96,CLineC*RADY+Y+164,Color(0,0,0,255),big and 4 or middle and 3 or 2)
+            if i%10 == 0 then 
+                scr.drawText(CLineS*100+X+96,CLineC*100+Y+164,tostring(i),1,1,Color(0,0,0,255),ArialNarrow[24])
+            end
+            
+            if big and i>-10 and i<10 and i~=0 then 
+                scr.drawText(CLineS*137+X+96,CLineC*137+Y+164,tostring(i),1,1,Color(0,0,0,255),ArialNarrow[24])
+            end
+        end
+        
+        dat.Ted = (dat.Ted + (Net.Ted-dat.Ted)*0.4)
+        if dat.Ted < -1000 then dat.Ted = -1000 end
+        if dat.Ted > 1000 then dat.Ted = 1000 end
+        local rad = math.rad((180-360)-dat.Ted/1000*72)
+        scr.drawLine(X+96,Y+164,sin(rad)*108+X+96,cos(rad)*108+Y+164,Color(20,20,20,255),3)
+        scr.drawPoly(engCircle,Color(40,40,40,255))
+        scr.drawLine(X+86,Y+164,X+106,Y+164,Color(20,20,20,255),3)
+        scr.drawText(X+96,Y+79,"x 100",1,1,Black,ArialNarrow[20])
+        scr.drawText(X+96,Y+99,"A",1,1,Black,ArialNarrow[30])
+        scr.drawText(X+96,Y+201,"ENGINES AMPERAGE",1,1,White,ArialNarrow[24])
+        
+        local X = ax+562
+        local Y = ay+323
+        for i=#Man1, 1,-1 do
+            scr.drawPoly(Man1[i],ManC[i])
+        end
+        
+        for i=0,80 do
+            local big = i%5 == 0
+            local rad = math.rad(180-(360/110)*i+130)
+            local CLineS=sin(rad)
+            local CLineC=cos(rad)
+            local RADX = big and 75 or 80
+            local RADY = 85.8--110
+            scr.drawLine(CLineS*RADX+X,CLineC*RADX+Y,CLineS*RADY+X,CLineC*RADY+Y,Color(0,0,0,255),big and 4 or 2)
+            if i%10 == 0 then 
+                scr.drawText(CLineS*62+X,CLineC*62+Y,tostring(i/5),1,1,Color(0,0,0,255),ArialNarrow[20])
+            end
+        end
+        
+        dat.TM = (dat.TM + (Net.TM-dat.TM)*0.4)
+        local TM = createArrow(dat.TM*262/1600)
+        for i=1,#TM do
+            scr.drawPoly(scr.poly(X,Y,TM[i]),Color(255,0,0,255))
+        end
+        scr.drawPoly(Tmc,Color(0,0,0,255))
+        
+        dat.NM = (dat.NM + (Net.NM-dat.NM)*0.4)
+        local NM = createArrow(dat.NM*262/1600)
+        for i=1,#NM do
+            scr.drawPoly(scr.poly(X,Y,NM[i]),Color(0,0,0,255))
+        end
+        
+        local X = ax+562
+        local Y = ay+533
+        
+        
+        for i=#Man2, 1,-1 do
+            scr.drawPoly(Man2[i],ManC[i])
+        end
+        
+        for i=0,60 do
+            local big = i%10 == 0
+            local middle = i%5 == 0
+            local rad = math.rad(180-(360/80)*i+135)
+            local CLineS=sin(rad)
+            local CLineC=cos(rad)
+            local RADX = big and 70 or middle and 72.5 or 75
+            local RADY = 85.8--110
+            scr.drawLine(CLineS*RADX+X,CLineC*RADX+Y,CLineS*RADY+X,CLineC*RADY+Y,Color(0,0,0,255),big and 4 or middle and 3 or 2)
+            if i%10 == 0 then 
+                scr.drawText(CLineS*62+X,CLineC*62+Y,tostring(i/10),1,1,Color(0,0,0,255),ArialNarrow[20])
+            end
+        end
+        
+        
+        dat.TC = (dat.TC + (Net.TC-dat.TC)*0.4)
+        local TC = createArrow(dat.TC*270/600-5)
+        for i=1,#TC do
+            scr.drawPoly(scr.poly(X,Y,TC[i]),Color(0,0,0,255))
+        end
+        scr.drawPoly(Tcc,Color(0,0,0,255))
+        
+        local X = ax+233
+        local Y = ay+423
+        
+        scr.drawRect(X+90,Y-50,20,-150,Color(100,50,50,255))
+        
+        if Net.COpen then
+            scr.drawRect(X+90,Y-160,20,80,Color(100,40,40,255))
+            scr.drawRectOL(X+90,Y-160,20,80,Color(30,30,30,255),4)
+        else
+            scr.drawRect(X+100,Y-150,-80,-20,Color(100,40,40,255))
+            scr.drawRectOL(X+100,Y-150,-80,-20,Color(30,30,30,255),4)
+        end
+        scr.drawPoly(razob[2][tonumber(Net.COpen)+1],Color(100,40,40,255))
+        scr.drawPolyOL(razob[2][tonumber(Net.COpen)+1],Color(30,30,30,255),4)
+        
+        scr.drawPoly(razob[1],Color(100,40,40,255))
+        scr.drawPolyOL(razob[1],Color(30,30,30,255),4)
+        
+        if dat.Type == 1 then
+            scr.drawRect(X-50,Y-50,200,100,Color(255,50,0,255))
+            scr.drawRectOL(X-50,Y-50,200,100,Color(30,30,30,255),4)
+            
+            for i=#Cran334C,2,-1 do
+                scr.drawPoly(Cran334C[i],Col334C[i])
+            end
+            scr.drawPolyOL(Cran334C[1],Color(30,30,30,255),4)
+            scr.drawPolyOL(Cran334C[2],Color(30,30,30,255),4)
+            
+            scr.drawPoly(Cran334C2[Net.Pos],Color(100,0,0,255))
+            scr.drawPolyOL(Cran334C2[Net.Pos],Color(30,30,30,255),4)
+            
+            scr.drawPoly(Cran334[Net.Pos],Color(100,0,0,255))
+            scr.drawPolyOL(Cran334[Net.Pos],Color(30,30,30,255),4)
+            
+            scr.drawPoly(Cran334C3[Net.Pos],Col334C[3])
+            for n=1,#C334t do
+                local rad = math.rad(-ang3[n])
+                scr.drawText(sin(rad)*160+ax+233,cos(rad)*160+ay+423,C334t[n],1,1,White,ArialNarrow[30])
+            end
+        else
+            scr.drawRect(X+50,Y-50,100,100,Color(100,50,50,255))
+            scr.drawRectOL(X+50,Y-50,100,100,Color(30,30,30,255),4)
+            
+            scr.drawPoly(Cran013[Net.Pos],Color(100,50,50,255))
+            scr.drawPolyOL(Cran013[Net.Pos],Color(30,30,30,255),4)
+            scr.drawPoly(Cran013C2[Net.Pos],Color(100,50,50,255))
+            scr.drawPolyOL(Cran013C2[Net.Pos],Color(30,30,30,255),4)
+            
+            scr.drawPoly(Cran013C[2],Col013C[1])
+            scr.drawPolyOL(Cran013C[2],Color(30,30,30,255),4)
+            scr.drawPolyOL(Cran013C[3],Color(30,30,30,255),4)
+            
+            
+            for i=1,8 do
+                scr.drawPoly(Cran013C3[Net.Pos][i],Color(120,30,30,255))
+            end
+            scr.drawPoly(Cran013C[1],Col013C[2])
+            for n=1,#ang1 do
+                local rad = math.rad(-ang1[n])
+                scr.drawText(sin(rad)*200+X+100,cos(rad)*200+Y,C013t[n],1,1,White,ArialNarrow[30])
+            end
+        end
+    end
+    
+    local lampcol = Color(30,30,30,255)
+    local function lamp(x,y,text,on,oncol,down)
+        scr.drawRect(x,y,44,30,on and oncol or lampcol)
+        if on then scr.drawText(x+22,y+15,text,1,1,Black,Coolvetica[#text > 3 and 20 or 25]) end
+        if text and down ~= false then 
+            scr.drawText(x+22,y+15+25*(down and 1 or -1),text,1,1,Black,Coolvetica[20])
+        end
+    end
+    
+    local digit_bitmap = {
+        [-1] = { 0,0,0,0,0,0,0 },
+        [1]  = { 0,0,1,0,0,1,0 },
+        [2]  = { 1,0,1,1,1,0,1 },
+        [3]  = { 1,0,1,1,0,1,1 },
+        [4]  = { 0,1,1,1,0,1,0 },
+        [5]  = { 1,1,0,1,0,1,1 },
+        [6]  = { 1,1,0,1,1,1,1 },
+        [7]  = { 1,0,1,0,0,1,0 },
+        [8]  = { 1,1,1,1,1,1,1 },
+        [9]  = { 1,1,1,1,0,1,1 },
+        [0]  = { 1,1,1,0,1,1,1 },
+    }
+
+    local segment_poly = {
+        [1] = { 
+            { x = 0,    y = 0 },
+            { x = 100,  y = 0 },
+            { x =  80,  y = 20 },
+            { x =  20,  y = 20 },
+        },
+        [2] = { 
+            { x =  20,  y = 0 },
+            { x =  80,  y = 0 },
+            { x = 100,  y = 20 },
+            { x =   0,  y = 20 },
+        },
+        [3] = { 
+            { x =  0,  y = 0 },
+            { x = 20,  y = 20 },
+            { x = 20,  y = 80 },
+            { x =  0,  y = 100 },
+        },
+        [4] = { 
+            { x =  0,  y = 20 },
+            { x = 20,  y = 0 },
+            { x = 20,  y = 100 },
+            { x =  0,  y = 80 },
+        },
+        [5] = { 
+            { x = 0,  y = 12 },
+            { x = 20,  y = 0 },
+            { x = 80,  y = 0 },
+            { x = 100,  y = 12 },
+            { x = 80,  y = 24 },
+            { x = 20,  y = 24 },
+        },
+    }
+
+    function DrawSegment(i,x,y,scale_x,scale_y,back)
+        local poly = {}
+        for k,v in pairs(segment_poly[i]) do
+                table.insert(poly,v.x*scale_x + x)
+                table.insert(poly,v.y*scale_y + y)
+        end
+        
+        scr.drawPoly(scr.poly(0,0,poly),back>0 and Color(0,255,0,255) or Color(130,110,90,255))
+    end
+    
+    function DrawDigit(cx,cy,digit,scalex,scaley,thickness)
+        if type(digit) == "string" then digit = tonumber(digit) end
+        scalex = scalex or 1
+        scaley = scaley or scalex
+        thickness = thickness or 1
+        local bitmap = digit_bitmap[digit]
+        if not bitmap then return end
+        
+        local sx = 0.9*scalex*thickness
+        local sy = 0.9*scaley*thickness
+        local dx = scalex
+        local dy = scaley
+        
+        DrawSegment(1,cx+5*dx,cy,sx,sy,bitmap[1])
+        DrawSegment(3,cx,cy+10*dy,sx,sy,bitmap[2])
+        DrawSegment(4,cx+80*dx,cy+10*dy,sx,sy,bitmap[3])
+        DrawSegment(5,cx+5*dx,cy+95*dy,sx,sy,bitmap[4])
+        DrawSegment(3,cx,cy+110*dy,sx,sy,bitmap[5])
+        DrawSegment(4,cx+80*dx,cy+110*dy,sx,sy,bitmap[6])
+        DrawSegment(2,cx+5*dx,cy+190*dy,sx,sy,bitmap[7])
+    end
+    
+    local linecol = Color(40,40,40,255)
+    
+    local Red = Color(220,51,20,255)
+    local Orange = Color(220,115,20,255)
+    local Yellow = Color(215,125,0,255)
+    local Green = Color(100,239,20,255)
+    tab[4] = function()
+        local X = ax+4
+        local Y = ay
+        scr.drawRect(X,Y,768,384,Color(160,160,160,150))
+        scr.drawRectOL(5,81,773,384,col1,5)
+        scr.drawRectOL(X+91,Y+35,410,194,Color(40,40,40,255),5)
+        
+        scr.drawLine(X+514,Y+37,X+683,Y+37,linecol,5)
+        scr.drawLine(X+681,Y+36,X+681,Y+321,linecol,5)
+        scr.drawLine(X+683,Y+321,X+90,Y+321,linecol,5)
+        scr.drawLine(X+93,Y+321,X+93,Y+246,linecol,5)
+        scr.drawLine(X+90,Y+246,X+514,Y+246,linecol,5)
+        scr.drawLine(X+514,Y+248,X+514,Y+34,linecol,5)
+        
+        scr.drawRect(X+273,Y+69,62,64,Color(94,89,85,255))
+        local Speed =  string.format("%02d",Net.Speed)
+        DrawDigit(X+273+2,Y+69+9,Net.Batt>60 and Speed[1] or -1,0.085*3.15,0.070*3.15)
+        DrawDigit(X+304+2,Y+69+9,Net.Batt>60 and Speed[2] or -1,0.085*3.15,0.070*3.15)
+        
+        lamp(X+526,Y+58)
+        lamp(X+630,Y+58,"LKVC",Net.LKVC and Net.Batt>60,Red,true)
+        
+        lamp(X+526,Y+129,"LN",nil,nil,true)
+        lamp(X+630,Y+129,"LVD",Net.LVD and Net.Batt>60,Green,true)
+        
+        lamp(X+107,Y+176,"NF",Net.ARS == 0 and Net.Batt>60,Red)
+        lamp(X+175,Y+176,"0",(Net.ARS == 2 or Net.ARSNext == 2) and Net.Batt>60,Red)
+        lamp(X+243,Y+176,"40",(Net.ARS == 4 or Net.ARSNext == 4) and Net.Batt>60,Yellow)
+        lamp(X+311,Y+176,"60",(Net.ARS == 6 or Net.ARSNext == 6) and Net.Batt>60,Green)
+        lamp(X+379,Y+176,"70",(Net.ARS == 7 or Net.ARSNext == 7) and Net.Batt>60,Green)
+        lamp(X+447,Y+176,"80",Net.ARS == 8 and Net.Batt>60,Green)
+        
+        lamp(X+526,Y+198,"LKVD",Net.LKVD and Net.Batt>60,Red,true)
+        lamp(X+630,Y+198,"RS",Net.ARSNext >= Net.ARS and Net.Batt>60,Green,true)
+        
+        lamp(X+107,Y+271,"LSD",Net.LSD and Net.Batt>60,Green)
+        lamp(X+175,Y+271,"LSD",Net.LSD and Net.Batt>60,Green)
+        lamp(X+277,Y+271,"RK",Net.RK and Net.Batt>60,Orange)
+        lamp(X+379,Y+271,"RP",Net.RP and Net.Batt>60,Red)
+        lamp(X+447,Y+271,"LSN",Net.RP and Net.Batt>60,Red)
+        lamp(X+526,Y+271,"LKT",Net.LKT and Net.Batt>60,Green,true)
+        lamp(X+630,Y+271,"LST",Net.LST and Net.Batt>60,Green,true)
+        
+        local Lamps = {}
+        table.insert(Lamps,{"RPw",Green})
+        table.insert(Lamps,{"VZ1l",Green})
+        table.insert(Lamps,{"VZ2",Red})
+        table.insert(Lamps,{"AVU",Red})
+        table.insert(Lamps,{"PS",Green})
+        table.insert(Lamps,{"PP",Yellow})
+        table.insert(Lamps,{"PT",Red})
+        table.insert(Lamps,{"OP",Green})
+        
+        for i=1,#Lamps do
+            lamp(X+(i-1)*54,Y+394,Lamps[i][1]:sub(1,3),Net[Lamps[i][1]] and Net.Batt>60,Lamps[i][2],false)
+        end
+    end
+    
+    local function draw()
+        scr.clear()
+        
+        scr.drawRectOL(5,0,991,85,col1,5)
+        scr.drawRectOL(836,81,160,160,col1,5)
+        
+        createButton(20,15,100,55,"SHUNT",30,Net.tab == 1)
+        createButton(140,15,145,55,"BREAKERS",30,Net.tab == 2)
+        createButton(305,15,150,55,"VALUE "..(dat.Type == 1 and "334" or "013"),30,Net.tab == 3)
+        createButton(475,15,70,55,"ARS",30,Net.tab == 4)
+        createButton(565,15,100,55,"LAMPS",30,Net.tab == 5)
+        
+        if tab[Net.tab] then tab[Net.tab]() end
+        
+    end
+    
+    local function receive(nname)
+        local Name = "net"..ID
+        if Name~=nname then print("WUT") return end
+        local typ = net.readString()
+        local str = net.readString()
+        if typ == "number" then
+            Net[str] = net.readInt(32)
+        end
+        if typ == "boolean" then
+            Net[str] = net.readBit()>0
+        end
+        if (str == "AVU" or str == "LSD") and find.canFind() and Net.Batt > 60 then
+            for _,ply in pairs(find.allPlayers()) do
+                local weapon = ply:getActiveWeapon()
+                if weapon:find("sf_remote") then
+                    snd.emitEntity(ply, "subway_trains/relay_"..(Net[str] and math.random(2,3) or 1)..".wav")
+                end
+            end
+        end
+    end
+    
+    hook.add("render","Draw2D"..ID,draw)    
+    hook.add("net","receive"..ID,receive)
+end

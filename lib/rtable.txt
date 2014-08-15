@@ -1,0 +1,81 @@
+--@name Lib/RTable
+--@author Mijyuoon
+ 
+local TKEY, FKEY = {}, {}
+local meta
+ 
+local function prep(tab)
+    if not tab then return {} end
+    if getmetatable(tab) == meta then
+        tab = tab[TKEY]
+    end
+    local rtab = {}
+    for k,v in pairs(tab) do
+        --local tt = type(k)
+        rtab[k] = v
+    end
+    return rtab
+end
+ 
+meta = {
+    __index = function(self,k)
+        return self[TKEY][k]
+    end,
+    __newindex = function(self,key,val)
+        local tab = self[TKEY]
+        local tval = tab[key]
+        if tval ~= nil and val ~= nil and tval ~= val then
+            tab[key] = val
+            if tostring(key):match("^__") then return end
+            local callback = self[FKEY]
+            if callback[1] and callback[2] then
+                callback[1](key,tval,val)
+            end
+        end
+    end,
+    __call = function(self,opt,a1,a2)
+        if opt == nil or type(opt) == "function" then
+            self[FKEY][1] = opt or false
+        elseif type(opt) == "table" then
+            self[TKEY] = prep(opt)
+        elseif opt == "p" then
+            return pairs(self[TKEY])
+        elseif opt == "i" then
+            return ipairs(self[TKEY])
+        elseif opt == "t" then
+            return self[TKEY]
+        elseif opt == "n" then
+            local tab = self[TKEY]
+            local typ = type(a1)
+            if typ == "number" then
+                for i = 1,a1 do
+                    tab[i] = a2 or false
+                end
+            elseif typ == "table" then
+                for _,v in pairs(a1) do
+                    tab[v] = a2 or false
+                end
+            end
+            return #tab
+        elseif opt == "c" then
+            local callback = self[FKEY]
+            callback[2] = a1 and true or false
+            if callback[1] and a1 then
+                callback[1](a1, nil, self[TKEY][a1])
+            end
+        end
+    end
+}
+ 
+local function rtable(tab)
+    if type(tab) ~= "table" and tab ~= nil then
+        error("expected table or no value")
+    end
+    local rtab = {
+        [TKEY] = prep(tab),
+        [FKEY] = {false, true},
+    }
+    return setmetatable(rtab, meta)
+end
+ 
+return rtable

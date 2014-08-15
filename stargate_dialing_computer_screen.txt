@@ -1,0 +1,886 @@
+--ADDRESS BOOK MAGIC
+--a,b,c = string.match("1 4R6OX8 Abydos Govno", "^([1]?)%s-([%w@#]+)%s*(.*)$")
+--print(a,b,c)
+--1;4R6OX8;Abydos Govno
+--@name SGC Dialing Computer v1
+--@author 
+--@sharedscreen
+--@include Lib/ScrLib
+--@include Lib/RTable
+hook = loadLibrary("hook")
+timer = loadLibrary("timer")
+net = loadLibrary("net")
+local snd = loadLibrary "sounds"
+local ME = loadLibrary("ents").self()
+
+local function toChar(test)
+    if test and 32 <= test and test <= 126 and test ~= 35 then
+        return string.upper(string.char(test))
+    end
+    return ""
+end
+
+    
+local function checkAddress(String,Bool)
+    if Bool then 
+        if (String:len()==7 and String[7]=="#") or( String:len()==8 and String[8]=="#") or String:len()==9 then
+            return true
+        else
+            return false
+        end
+    else
+        if String[String:len()]=="#" then
+            return false
+        else
+            return true
+        end
+    end
+    return nil
+end
+    
+local function spp(str,i,r)
+    return (str:sub(1, i-1) .. r .. str:sub(i+1))
+end
+
+local function chk_gate(g)
+    if g and g.isValid and g:isValid() then
+        local ent = g:entity()
+        return (ent:getClass() == "stargate_sg1" or ent:getClass() == "stargate_infinity")
+    end
+    return false
+end
+
+local function tonumberb(Bool)
+    return Bool and 1 or 0    
+end
+
+local function tostringb(Bool)
+    return tostring(tonumberb(Bool))
+end
+C_ChrA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890@#*"
+
+
+if SERVER then 
+    R = require "Lib/RTable"
+    wire = loadLibrary("wire")
+    sg = loadLibrary("stargate")
+    wire.adjustInputs({"Stargate","Keyboard","AddrIn"},{"wirelink","normal","string"})
+    
+    local data = R{
+    Initialized = false,
+    Connected = false,
+    Active = false,
+    Open = false,
+    Inbound = false,
+    Chevron = 0,
+    ChevronLocked = false,
+    Chevrons = "000000000",
+    RingSymbol = "",
+    RingRotation = 0,
+    DialingAddress = "",
+    DialingSymbol = "",
+    DialedSymbol = "",
+    DialMode = 0,
+    RingAngle = 0,
+    Overload = false,
+    OverTime = 0,
+    OverPerc = 0,
+    Unstable = false, 
+    EnteredAddress = "",
+    Mode = 0,
+    ShowTime = false,
+    Time = 0,
+    }
+    data(function(key,old,new)
+        --print("Changed "..key.." from "..tostring(old).." -> "..tostring(new))
+        --[[if(key=="RingRotation" and data.RingRotation==0) then 
+            snd.emitEntity(ME, "alexalx/glebqip/dp_locking.wav")
+        end
+        if(key=="Chevron" and data.Chevron>0) then 
+            snd.emitEntity(ME, "alexalx/glebqip/dp_encoded.wav")
+        end]]--
+        if key=="Open" and new then
+            opentime = timer.curtime()
+        end
+        if key~="RingAngle" and key~="EnteredAddress" and key~="Mode" and key~="Time" and key~="ShowTime"  then
+            if net.canSend() then 
+                net.start("DialCompNR")
+                    net.writeBit(data.Connected)
+                    net.writeBit(data.Active)
+                    net.writeBit(data.Open)
+                    net.writeBit(data.Inbound)
+                    net.writeInt(data.Chevron,8)
+                    net.writeBit(data.ChevronLocked)
+                    net.writeString(data.Chevrons)
+                    net.writeString(data.RingSymbol)
+                    net.writeInt(data.RingRotation,8)
+                    net.writeString(data.DialingAddress)
+                    net.writeString(data.DialingSymbol)
+                    net.writeString(data.DialedSymbol)
+                    net.writeInt(data.DialMode,8)
+                    net.writeBit(data.Overload)
+                    net.writeInt(data.OverTime,16)
+                    net.writeInt(data.OverPerc,8)
+                    net.writeBit(data.Unstable)
+                net.send()
+            end
+        elseif key=="RingAngle" then
+            if net.canSend() then 
+                net.start("DialCompR")
+                    net.writeFloat(data.RingAngle,1)
+                net.send()
+            end
+        elseif key=="EnteredAddress" or key=="Mode" then
+            if net.canSend() then
+                    net.start("DialCompK")
+                    net.writeString(data.EnteredAddress)
+                    net.writeInt(data.Mode,8)
+                net.send()
+            end
+        elseif key=="Time" or key=="ShowTime" then
+            if ((key=="ShowTime" or key=="Time") and data.ShowTime) or (key=="ShowTime" and not data.ShowTime) then
+                if net.canSend() then 
+                    net.start("DialCompT")
+                        net.writeFloat(data.Time,2)
+                        net.writeBit(data.ShowTime)
+                    net.send()
+                end
+            end
+        end
+            
+        --print(data.RingAngle)
+    end)
+    
+    function getSGInputsNR()
+        if not wire.ports.Stargate or not chk_gate(wire.ports.Stargate) then data.Connected = false return else data.Connected=true end
+        local gate = wire.ports.Stargate
+        gate["Set Point of Origin"]=1
+        gate["SGC Type"]=1
+        data.Active = gate.Active>0 
+        data.Open = gate.Open>0 
+        data.Inbound = gate.Inbound>0 
+        data.Chevron = gate.Chevron
+        data.ChevronLocked = gate["Chevron Locked"]>0 
+        data.Chevrons = gate.Chevrons
+        data.RingSymbol = gate["Ring Symbol"]
+        data.RingRotation = gate["Ring Rotation"]
+        data.DialingAddress = gate["Dialing Address"]
+        data.DialingSymbol = gate["Dialing Symbol"]
+        data.DialedSymbol = gate["Dialed Symbol"]
+        data.DialMode = gate["Dialing Mode"]
+        data.Overload = sg.overloadTime(gate:entity())>0
+        data.OverTime = sg.overloadTime(gate:entity())
+        data.OverPerc = sg.overloadPerc(gate:entity())
+        data.Unstable = sg.gateUnstable(gate:entity())
+    end
+    function getSGInputsR()
+        if not wire.ports.Stargate or not chk_gate(wire.ports.Stargate) then data.Connected = false return else data.Connected=true end
+        local gate = wire.ports.Stargate
+        data.RingAngle = math.floor(math.round(sg.getRingAngle(gate:entity()),1))
+    end
+    timer.create("SGGetNR",0.2,0,getSGInputsNR)
+    timer.create("SGGetR",0.1,0,getSGInputsR)
+    timer.simple(0.5,
+        function()
+            data.Initialized = true
+            getSGInputsNR()
+            getSGInputsR()
+        end
+    )
+    timer.create("TIMER",0.08,0,
+        function()
+            if data.Open then data.Time = timer.curtime() - opentime end
+        end
+    )
+    
+    hook.add("input","Keyboard",
+        function(Name,Value)
+            if Name=="AddrIn" and wire.ports.AddrIn and data.Connected then
+                Address=Value
+                if Address=="" and data.EnteredAddress~="" then
+                    sg.dialGate(wire.ports.Stargate:entity(),data.EnteredAddress ,data.Mode)
+                end
+                data.EnteredAddress=Address
+            end
+            if Name=="Keyboard" then
+                Key=Value
+                if Key~=0 then snd.emitEntity(ME, "alexalx/glebqip/click"..math.random(1,4)..".mp3") end
+                if data.Connected then
+                    local gate = wire.ports.Stargate
+                    local Char=toChar(Key):upper()
+                    local SGate = gate:entity()
+                    
+                    if not data.Active then
+                        if Key==13 then
+                            if checkAddress(data.EnteredAddress,true) then
+                                sg.dialGate(SGate,data.EnteredAddress ,data.Mode)
+                                data.EnteredAddress=""
+                            elseif data.EnteredAddress:len()<9 and data.EnteredAddress:len()>=6 then
+                                data.EnteredAddress=data.EnteredAddress.."#"
+                            end
+                        elseif Key~=127 and not data.EnteredAddress:find(Char) and Char:match("[%w@#]") and data.EnteredAddress:len()<9 and checkAddress(data.EnteredAddress,false) then
+                            data.EnteredAddress=data.EnteredAddress..Char--..toChar()
+                        elseif Key==127  then
+                            data.EnteredAddress=data.EnteredAddress:sub(1, -2)
+                        end
+                    else
+                        if Key==127 then sg.closeGate(SGate) end
+                    end
+                    if Key==92 then sg.irisToggle(SGate) end
+                    if Key==61 then data.ShowTime=not data.ShowTime end
+                    if Key==129 then data.Mode=0 end
+                    if Key==130 then data.Mode=1 end
+                    if Key==131 then data.Mode=2 end
+                end
+            end
+        end
+    )
+        
+elseif CLIENT then  
+    local ScrLib = require "Lib/ScrLib"
+    local clear = ScrLib.clear
+    local drawLine = ScrLib.drawLine
+    local drawBox = ScrLib.drawRect
+    local drawTextBox = ScrLib.drawRectText
+    local drawBoxOutline = ScrLib.drawRectOL
+    local drawText = ScrLib.drawText
+    local poly = ScrLib.poly
+    local circle = ScrLib.circle
+    local drawCircle = ScrLib.drawCircle
+    local drawPoly = ScrLib.drawPoly
+    local drawPolyOutline = ScrLib.drawPolyOL
+    local drawSGCircle = ScrLib.drawSGCircle
+    local drawSGChevronsBox = ScrLib.drawSGChevronsBox
+    local generateChevPos = ScrLib.generateChevPos
+    local drawSGChevrons = ScrLib.drawSGChevrons
+    local createFont = ScrLib.createFont
+    
+    local SG = {
+        Connected = false,
+        Active = false,
+        Open = false,
+        Inbound = false,
+        Chevron = 0,
+        ChevronLocked = false,
+        Chevrons = "000000000",
+        RingSymbol = "",
+        RingRotation = 0,
+        DialingAddress = "",
+        DialingSymbol = "",
+        DialedSymbol = "",
+        DialMode = 0,
+        RingAngle = 0,
+        Overload = false,
+        OverTime = 0,
+        OverPerc = 0,
+        Unstable = false,
+        Mode = 0,
+    }
+    local isDraw=false
+    
+    local box1 = {{},{},{},{}}
+    local box2 = {}
+    local box3 = {{},{}}
+    local RandNum = {}
+    local Err = {{"CHEVRON ","NOT LOCKED"},{"GATE","OCCUPIED"},{"STARGATE","UNSTABLE"}}
+    local White = Color(255,255,255,255)
+    local Black = Color(0,0,0,255)
+    local Red = Color(255,0,0,255)
+    for i=0,8 do 
+        box3[1][i]=150
+        box3[2][i]=255
+    end
+    for i=0,17 do 
+        RandNum[i]= ""
+    end
+    
+    local SGFont = {}
+    local Marlett = {}
+    local DSDigital = {}
+    local TextAlpha = 0
+    local Text1 = {}
+    local Text2 = {}
+    local anPos = 0
+    local anState = 0
+    local Chevron = 0
+    local DialingAddress = ""
+    local EnteredAddress = ""
+    local Chevr8 = false
+    local Chevr9 = false
+    local Chevr8n = 0
+    local Chevr9n = 0
+    local Compl = 0
+    local TimeES = 0
+    local ShowTime = false
+    local ECode = 0
+    
+    Text1["000"] = {"IDLE",{266,372},1,30}
+    Text2["000"] = {"",{266,372},1,30}
+    Text1["010"] = {"SEQUENCE",{330,374},1,26}
+    Text2["010"] = {"IN PROGRESS",{330,398},1,26}
+    Text1["0101"] = {"SEQUENCE",{330,374},1,26}
+    Text2["0101"] = {"COMPLETE",{330,398},1,35}
+    Text1["110"] = {"LOCKED",{328,387},0,49}
+    Text2["110"] = {"",{328,387},0,49}
+    Text1["011"] = {"OFFWORLD ACTIVATION",{256,227},0,30}
+    Text2["011"] = {"",{227,256},0,30}
+    Text1["111"] = Text1["011"]
+    Text2["111"] = Text2["011"]
+    TextMode = {"","DHD DIALING SEQUENCER","NOX DIALING"}
+    
+    for i=0,130,5 do
+        SGFont[i]=createFont("Stargate Address Glyphs Concept",i,400)
+    end
+    
+    Marlett[13]=createFont("Marlett",13,400)
+    Marlett[17]=createFont("Marlett",17,400)
+    Marlett[18]=createFont("Marlett",18,400)
+    Marlett[26]=createFont("Marlett",26,400)
+    Marlett[27]=createFont("Marlett",27,400)
+    Marlett[53]=createFont("Marlett",53,400)
+    Marlett[55]=createFont("Marlett",55,400)
+    Marlett[30]=createFont("Marlett",30,400)
+    Marlett[35]=createFont("Marlett",35,400)
+    Marlett[49]=createFont("Marlett",49,400)
+    DSDigital[40]=createFont("DS-Digital",40,400)
+    DSDigital[55]=createFont("DS-Digital",55,400)
+    
+    generateChevPos(256,224,122,110)
+    circle1={circle(256,225,125,125,42,0),circle(256,225,125,125,42,46)}
+    circle2={circle(256,225,113,113,42,0),circle(256,225,113,113,42,46)}
+    circle3={circle(256,225,103,103,42,0),circle(256,225,103,103,42,46)}
+    circle4={circle(256,225,100,100,42,0),circle(256,225,100,100,42,46)}
+    
+    PolyA={   
+        8,0 
+        ,21,0 
+        ,30,9.5 
+        ,30,22.5 
+        ,21,31 
+        ,8,31 
+        ,0,23 
+        ,0,8}
+    Poly={poly(16,283,PolyA)
+    ,poly(50,283,PolyA)
+    ,poly(15,316,PolyA)
+    ,poly(49,316,PolyA)
+    }
+        
+    --[[timer.simple(0.5,
+        function()
+            isDraw=false
+        end
+    )]]
+    
+    function requreDraw()
+        isDraw=false
+    end
+    
+    function getSGNetData(Typ)
+        if Typ==0 then
+            SG.Connected = net.readBit()>0
+            SG.Active = net.readBit()>0
+            SG.Open = net.readBit()>0
+            SG.Inbound = net.readBit()>0
+            SG.Chevron = net.readInt(8)
+            SG.ChevronLocked = net.readBit()>0
+            SG.Chevrons = net.readString()
+            SG.RingSymbol = net.readString()
+            SG.RingRotation = net.readInt(8)
+            SG.DialingAddress = net.readString()
+            SG.DialingSymbol = net.readString()
+            SG.DialedSymbol = net.readString()
+            SG.DialMode = net.readInt(8)
+            SG.Overload = net.readBit()>0
+            SG.OverTime = net.readInt(16)
+            SG.OverPerc = net.readInt(8)
+            SG.Unstable = net.readBit()>0
+            requreDraw()
+        elseif Typ==1 then
+            SG.RingAngle = net.readFloat()
+            requreDraw()
+        elseif Typ==2 then
+            EnteredAddress = net.readString()
+            SG.Mode = net.readInt(8)
+            requreDraw()
+        elseif Typ==3 then
+            TimeES = net.readFloat(2)
+            ShowTime = net.readBit()>0
+            requreDraw()
+        end
+    end
+     
+    function randNums()
+        IStr = ""
+        if SG.Active==true then
+            for i=1, math.random(5,11) do 
+                IStr=IStr..tostring(math.random(0,9))
+            end
+        end
+        table.remove(RandNum,1)
+        table.insert(RandNum,17,IStr)
+        requreDraw()
+    end
+    
+    local MUL    
+    function setAlpha()
+        if(TextAlpha>300) then MUL=false end
+        if(TextAlpha<-15) then MUL=true end
+        if MUL then
+            TextAlpha=TextAlpha+15
+        else
+            TextAlpha=TextAlpha-15
+        end
+        requreDraw()
+    end
+    
+    function randBox1()
+        local RowN = 9
+        for i=0,35 do
+            local ix, iy = i%RowN, math.floor(i/RowN)    
+            box1[iy+1][ix]=math.random() > 0.4
+        end
+        randNums()
+        requreDraw()
+    end
+    
+    function randBox2()
+        for i=0,23 do 
+            box2[i]=math.random() > 0.6
+        end
+        requreDraw()
+    end
+    
+    function randBox3()
+        for i=0,8 do 
+            box3[1][i]=box3[1][i]+math.randfloat(1,15)
+            box3[2][i]=box3[1][i]>50 and 255-(box3[1][i]-50)*2.55 or 255
+            if box3[1][i]>150 and SG.Active and (SG.RingRotation~=0 or SG.Open) then box3[1][i]=0 end
+        end
+        setAlpha()
+        requreDraw()
+    end  
+    
+    function anChev(Pos,Chevron,State,Symbol)
+        _Chevron=Chevron
+        if State==1 then
+            drawText(256,110+Pos*0.884,Symbol,1,1,ECode==1 and Red or White,SGFont[Pos])
+        elseif State==2 then
+        _Pos=130-Pos
+            drawText(256+2.41*_Pos,224-_Pos*(1.22-0.5*_Chevron),Symbol,1,1,White,SGFont[Pos])
+        end
+    end
+    
+    function showError(ErrCode,col)
+        if ErrCode==0 then return end
+        drawBox(157,275,200,60,Black)
+        drawBoxOutline(157,275,200,60,col,2)
+        drawText(257,295,(Err[ErrCode][1]..(ErrCode==1 and math.abs(SG.Chevron) or "")),1,1,Red,Marlett[30])
+        drawText(257,315,Err[ErrCode][2],1,1,Red,Marlett[30])
+        requreDraw()
+    end
+    
+    function MainFrame(col1,col2)
+        --[[circle1 = {drawPolyOutline(circle(256,225,113-i,113-i,36,0),col2)
+                drawPolyOutline(circle(256,225,113-i,113-i,36,45),col2)}]]--
+        clear()
+        --drawTextBox(0,84,512,336,White,"np1")
+        --drawTextBox(256,251,512,327,Color(255,255,255,40),"np5")
+        drawBoxOutline(8,92,83,178,col1,1)
+        drawBoxOutline(6,362,162,50,col1,1)
+        drawLine(163,362,163,412,col1,1)
+        for i=0,8 do
+            drawLine(163,367+i*5,167,367+i*5,col1,1)
+        end
+        
+        if Compl%2~=0 then
+            for i=0,Chevron-1 do
+                drawBox(441,93+i*45,64,43,Color(12,96,104),1)
+            end
+        end
+        for i=0,Chevr8 and 6+tonumberb(Chevr8)+tonumberb(Chevr9) or 6 do  --8 do
+            drawBoxOutline(441,93+i*45,64,43,i<7 and col1 or Red,1)
+        end
+         drawBox(440,407+Chevr8n,65,44-Chevr8n,Black,1)
+         drawBox(440,452+Chevr9n,65,44-Chevr9n,Black,1)
+        
+        drawBoxOutline(1,85,511,334+(Chevr8 and (tonumberb(Chevr8)+tonumberb(Chevr9))*45 or 0),col1,1)--FIRST BOX!!!
+        
+        local flr = math.floor
+        local RowN = 8
+        for i = 0, 23 do
+            if not box2[i] or not SG.Connected then continue end
+            local ix, iy = i%RowN, flr(i/RowN)
+            drawBox(170+ix*8,362+iy*16.6,8,16,White)
+        end
+
+        drawBoxOutline(170,362,64,50,col1,1)
+        drawLine(170,378,233,378,col1,1)
+        drawLine(170,395,233,395,col1,1)
+        for i=0,7 do
+            drawLine(178+i*8,362,178+i*8,412,col1,1)
+        end        
+        
+        drawBoxOutline(95,92,323,267,col1,1)
+        
+        drawBox(95,91,14,17,col1,1)
+        drawBox(403,91,14,17,col1,1)
+        drawBox(95,341,14,17,col1,1)
+        drawBox(403,341,14,17,col1,1)
+        drawLine(95,108,185,108,col1,1)
+        drawLine(417,108,326,108,col1,1)
+        drawLine(417,341,326,341,col1,1)
+        drawLine(95,341,185,341,col1,1)
+        
+        drawLine(229,225,283,225,col1,1)
+        drawLine(257,196,257,253,col1,1)
+        
+        drawLine(95,143,137,143,col1,1)
+        drawLine(137,143,158,122,col1,1)
+        drawLine(157,122,165,122,col1,1)
+        
+        drawLine(95,200,125,200,col1,1)
+        
+        drawLine(95,257,118,257,col1,1)
+        drawLine(118,257,130,292,col1,1)
+        drawLine(130,292,138,292,col1,1)
+        
+        drawLine(416,143,373,143,col1,1)
+        drawLine(374,143,353,122,col1,1)
+        drawLine(353,122,346,122,col1,1)
+        
+        drawLine(416,200,386,200,col1,1)
+        
+        drawLine(416,257,393,257,col1,1)
+        drawLine(393,257,381,292,col1,1)
+        drawLine(381,292,374,292,col1,1)
+        
+        drawLine(6,275,6,357,col1,1)
+        drawLine(90,275,90,357,col1,1)
+        drawLine(9,284,9,290,col1,1)
+        drawLine(9,341,9,347,col1,1)
+        drawLine(84,284,84,290,col1,1)
+        drawLine(84,341,84,347,col1,1)
+        
+        
+        drawLine(25,275,36,275,col1,1)
+        drawLine(31,275,31,283,col1,1)
+        drawPolyOutline(Poly[1],col1)
+        drawLine(59,275,70,275,col1,1)
+        drawLine(65,275,65,283,col1,1)
+        drawPolyOutline(Poly[2],col1)
+        drawLine(24,356,35,356,col1,1)
+        drawLine(30,356,30,347,col1,1)
+        drawPolyOutline(Poly[3],col1)
+        drawLine(58,356,69,356,col1,1)
+        drawLine(64,356,64,347,col1,1)
+        drawPolyOutline(Poly[4],col1)
+        Col1={}
+        Col2={}
+        Col1.r=col1.r+(SG.OverPerc/100*(255-col1.r))
+        Col2.r=col2.r+(SG.OverPerc/100*(255-col2.r))
+        Col1.g=col1.g-(SG.OverPerc/100*(col1.g))
+        Col2.g=col2.g-(SG.OverPerc/100*(col2.g))
+        Col1.b=col1.b-(SG.OverPerc/100*(col1.b))
+        Col2.b=col2.b-(SG.OverPerc/100*(col2.b))
+        drawPolyOutline(circle1[1],Color(Col1.r,Col1.g,Col1.b,col1.a),3)
+        drawPolyOutline(circle1[2],Color(Col1.r,Col1.g,Col1.b,col1.a),3)
+        drawSGCircle(256,225,100.2,126,Color(Col1.r,Col1.g,Col1.b,col1.a),1,0)
+        drawPolyOutline(circle2[1],Color(Col2.r,Col2.g,Col2.b,col2.a),2)
+        drawPolyOutline(circle2[2],Color(Col2.r,Col2.g,Col2.b,col2.a),2)
+        drawPolyOutline(circle3[1],Color(Col2.r,Col2.g,Col2.b,col2.a),2)
+        drawPolyOutline(circle3[2],Color(Col2.r,Col2.g,Col2.b,col2.a),2)
+        drawSGCircle(256,225,103,113,Color(Col2.r,Col2.g,Col2.b,col2.a),2,SG.RingAngle)
+        drawPolyOutline(circle4[1],Color(Col1.r,Col1.g,Col1.b,col1.a))
+        drawPolyOutline(circle4[2],Color(Col1.r,Col1.g,Col1.b,col1.a))
+        drawSGChevronsBox(col2,SG.Open and 1 or 0,SG.Chevrons)
+        drawSGChevrons(col2,SG.Open and 1 or 0,SG.Chevrons)
+        
+        local RowN = 3
+        for i=0,8 do
+            if not box1[1][i] or not SG.Connected then continue end
+            local ix, iy = i%RowN, flr(i/RowN)
+            drawBox(24+ix*5,291+iy*6,3,3,col2)
+        end
+        for i=0,8 do
+            if not box1[2][i] or not SG.Connected then continue end
+            local ix, iy = i%RowN, flr(i/RowN)
+            drawBox(58+ix*5,291+iy*6,3,3,col2)
+        end
+        for i=0,8 do
+            if not box1[3][i] or not SG.Connected then continue end
+            local ix, iy = i%RowN, flr(i/RowN)
+            drawBox(23+ix*5,323+iy*6,3,3,col2)
+        end
+        for i=0,8 do
+            if not box1[4][i] or not SG.Connected then continue end
+            local ix, iy = i%RowN, flr(i/RowN)
+            drawBox(57+ix*5,323+iy*6,3,3,col2)
+        end
+        for i=0,8 do
+            --EGP:egpText(367+I,"#",vec2(473,115+45*I))
+            if i+1>DialingAddress:len() then continue end
+            drawText(473,115+i*45,DialingAddress[i+1],1,1,White,SGFont[35])
+        end
+        for i=0,Chevr8 and 6+tonumberb(Chevr8)+tonumberb(Chevr9) or 6 do  --8 do
+            if i+1>Chevron then continue end
+            drawText(430,120+i*45,tostring(i+1),1,1,i<7 and White or Red,Marlett[30])
+        end
+        
+        for i=0,8 do
+            X=box3[1][i]
+            BoxCol=Color(col1.r,col1.g,col1.b,box3[2][i]<0 and 0 or box3[2][i] )
+            if X == nil or X >150 then continue end
+            drawTextBox(9+i*17,364+(X>47 and 0 or 47-X),14,(X>47 and 47 or X),BoxCol,"gui/gradient_down")
+        end
+        
+        for i=0,16 do
+            --RandNum[I+1]
+            if RandNum[i+1]=="" then continue end
+            drawText(86,101+10*i,RandNum[i+1],2,1,col2,Marlett[13])
+        end
+        
+        Text=tostringb(SG.Open)..tostringb(SG.Active)..tostringb(SG.Inbound)..(
+        SG.Active and not SG.Open and not SG.Inbound and (SG.DialedSymbol=="#" or Chevron==9) and
+            tostringb((SG.DialedSymbol=="#" or Chevron==9))
+        or "")
+        local DT1 = Text1[Text]
+        local DT2 = Text2[Text]
+        local TextCol = DT1[3]>0 and col1 or Red
+        
+        if TextAlpha>0 and TextAlpha<255 then
+            TextAlpha1 = TextAlpha
+        elseif TextAlpha>0 then
+            TextAlpha1 = 255
+        else
+            TextAlpha1 = 0
+        end
+        
+        if SG.Connected then
+            drawText(DT1[2][1],DT1[2][2],DT1[1],1,1,Color(TextCol.r,TextCol.g,TextCol.b,TextAlpha1),Marlett[DT1[4]])
+            drawText(DT2[2][1],DT2[2][2],DT2[1],1,1,Color(TextCol.r,TextCol.g,TextCol.b,TextAlpha1),Marlett[DT2[4]])
+            if SG.Inbound then
+                drawBox(95,92,43,45,Color(255,0,0,TextAlpha1))
+                drawBox(374,92,43,45,Color(255,0,0,TextAlpha1))
+                drawBox(95,313,43,45,Color(255,0,0,TextAlpha1))
+                drawBox(374,313,43,45,Color(255,0,0,TextAlpha1))
+            elseif SG.Open then
+                drawBox(243,361,172,8,Color(255,0,0,TextAlpha1))
+                drawBox(243,404,172,8,Color(255,0,0,TextAlpha1))
+            end
+            anChev(anPos,Chevron,anState,(ECode==1 and (Chevron<9 and "#" or SG.DialingAddress[9]) or SG.RingSymbol))
+            showError(ECode,col1)
+            --anChev(130,0,1,"#")
+        else
+            for i=0,1 do
+                local TempCol = Color(Red.r,Red.g,Red.b,i==1 and TextAlpha1 or 255-TextAlpha1)
+                drawBox(124,125+i*96,264,96,Color(0,0,0,i==1 and TextAlpha1 or 255-TextAlpha1))
+                drawBoxOutline(124,125+i*96,264,96,TempCol,2)
+                drawText(256,140+i*96,"STARGATE IS",1,1,TempCol,Marlett[30])
+                drawText(256,161+i*96,"DISCONNECTED",1,1,TempCol,Marlett[30])
+                drawText(256,181+i*96,"SYSTEM WILL BE",1,1,TempCol,Marlett[30])
+                drawText(256,201+i*96,"OFFLINE",1,1,TempCol,Marlett[30])
+            end
+        end
+        
+        if ShowTime and SG.Connected then
+            drawBox(124,175,264,100,Black)
+            drawBoxOutline(124,175,264,100,col1,2)  
+            drawBoxOutline(134,185,244,80,col1,2)      
+            for i=0,2 do
+                drawBoxOutline(146+i*80,195,60,60,col1,2)
+            end   
+            local ESTime = {math.floor(TimeES/60),math.floor(TimeES%60),math.floor((TimeES%1)*100)}
+            for i=0,2 do
+                drawBoxOutline(146+i*80,195,60,60,col1,2)
+                drawText(176+i*80,224,SG.Open and string.format("%02d", ESTime[i+1]) or "--",1,1,col2,DSDigital[55])
+            end
+        end
+        
+        if checkAddress(EnteredAddress,true) and not SG.Active then 
+            drawBox(124,153,264,133,Black)
+            drawBoxOutline(124,153,264,133,col1,2)
+            drawText(256,179,"INPUT",1,1,col1,Marlett[55])
+            drawText(256,223,"ACCEPTED",1,1,col1,Marlett[53])
+            drawText(256,265,"CORRECT ENTRY",1,1,Color(200,200,200,TextAlpha),Marlett[27])
+        end
+        
+        drawText(256,75,TextMode[SG.Mode+1],1,1,col1,Marlett[30])
+        if SG.Overload then
+            OvSec = SG.OverTime%60
+            OvMin = math.floor(SG.OverTime/60)
+            drawBox(124,125,264,133,Black)
+            drawBoxOutline(124,125,264,133,Red,2)
+            drawBox(124,258,264,65,Black)
+            drawBoxOutline(124,258,264,65,Red,2)
+            drawText(256,151,"WARNING",1,1,Red,Marlett[55])
+            if SG.OverPerc<=85 then drawText(256,183,"HIGH LEVEL OF ENERGY FLUX",1,1,Red,Marlett[18])
+            else drawText(256,183,"CRITICAL LEVEL OF ENERGY FLUX",1,1,Red,Marlett[17]) end
+            drawText(256,200,"STARGATE WILL BE DESTROYED",1,1,Red,Marlett[18])
+            drawText(256,218,"AFTER:",1,1,Red,Marlett[18])
+            TIME=string.format("%02d:%02d", OvMin, OvSec)
+            drawText(256,240,TIME,1,1,Red,DSDigital[40])
+            drawBox(144,272,math.floor(SG.OverPerc/100*224),36,Color(SG.OverPerc/100*255,255-SG.OverPerc/100*255,0,255))
+            drawBoxOutline(144,268,224,45,Red,3)
+        end
+        --[[for(I=1,40 then 
+        
+        #EGP:egpSize(156+I,2)
+        EGP:egpParent(112+I,108)} EGP:egpAngle(108,4.6)]]--
+        isDraw=true
+    end
+
+
+    local ColNum=2
+    local C1 = {Color(0,153,184,255),Color(0,153,154,255)}
+    local C2 = {White,Color(208,208,144,255)}
+    
+    hook.add("render","SGdraw",
+        function()
+            if isDraw then return end
+            MainFrame(C1[ColNum],C2[ColNum])
+        end
+    )
+    
+     hook.add("net", "Recirve", 
+        function(Name)
+            if Name == "DialCompNR" then
+                getSGNetData(0)
+            elseif Name == "DialCompR" then
+                getSGNetData(1)  
+            elseif Name == "DialCompK" then
+                getSGNetData(2)       
+            elseif Name == "DialCompT" then
+                getSGNetData(3)  
+            end 
+        end
+    )
+    local RingRotation_ = 0
+    local Chevron_ = 0
+    local ChevronLocked_ = 0
+    local Locked = false
+    timer.create("box1",0.15,0,randBox1)
+    timer.create("box2",0.5,0,randBox2)
+    timer.create("box3",0.05,0,randBox3)
+    timer.create("anchev",0.04,0,
+        function()
+            local abs = math.abs
+            if SG.DialMode==0 and not SG.Inbound and SG.Active then
+                if ((RingRotation_~=SG.RingRotation and SG.RingRotation==0) or (SG.DialingSymbol=="#" and SG.RingSymbol=="#") or (SG.DialingSymbol==SG.RingSymbol and SG.Chevron==9)) and anState==0 and SG.Active then
+                    anState=1
+                    --print(SG.RingRotation.."/"..RingRotation_.."/"..SG.DialingSymbol.."/"..SG.RingSymbol.."/"..SG.Chevron.."/"..Chevron)
+                    snd.emitEntity(ME, "alexalx/glebqip/dp_locking.wav")
+                end
+                
+                if anPos<130 and anState==1 then
+                    anPos=anPos+5
+                    anState=1
+                end
+                
+                if SG.RingSymbol~="" and SG.RingSymbol==SG.DialedSymbol and anState==1 then
+                    snd.emitEntity(ME, "alexalx/glebqip/dp_locked.wav")
+                    anState=2
+                end
+                  
+                if anPos>40 and anState==2 then
+                    anPos=anPos-5
+                    anState=2
+                end
+                
+                if anPos<=40 and anState==2 then
+                    --print(">"..SG.RingRotation.."/"..RingRotation_.."/"..SG.DialingSymbol.."/"..SG.RingSymbol.."/"..SG.Chevron.."/"..Chevron)
+                    Chevron=Chevron+1 
+                    if SG.DialingAddress[Chevron]~=SG.DialedSymbol then
+                        DialingAddress=DialingAddress..SG.DialedSymbol  
+                    else              
+                        DialingAddress=SG.DialingAddress
+                    end
+                    
+                    anPos=0 
+                    anState=0
+                    requreDraw()
+                end
+                RingRotation_=SG.RingRotation
+            elseif not SG.Inbound and SG.Active then
+                Chevron=abs(SG.Chevron)
+                DialingAddress=SG.DialingAddress
+            elseif SG.Active then 
+                Chevron=abs(SG.Chevron)
+                DialingAddress=""
+            else 
+                Chevron=0
+                DialingAddress=EnteredAddress
+                anState = 0 
+                anPos = 0 
+            end
+            if Chevron<SG.Chevron-1 and SG.Active then
+                Chevron=SG.Chevron 
+                DialingAddress=SG.DialingAddress
+            end
+            if not SG.Inbound then
+                if (Chevron>=7 and DialingAddress:len()>6 and DialingAddress[7]~="#") or (EnteredAddress:len()>6 and EnteredAddress[7]~="#") then 
+                    Chevr8 = true 
+                else 
+                    Chevr8 = false 
+                    Chevr8n = 0 
+                end
+                if (Chevron>=8 and DialingAddress:len()>7 and DialingAddress[8]~="#") or (EnteredAddress:len()>7 and EnteredAddress[8]~="#") then Chevr9 = true else Chevr9 = false Chevr9n = 0 end
+                --[[if Chevron==7 and DialingAddress[7]~="#" then Chevr8 = true end
+                if Chevron==7 and DialingAddress[7]=="#" and SG.DialingSymbol~="#" then Chevr8 = false Chevr9n = 0 end
+                if Chevron==8 and DialingAddress[8]~="#" then Chevr9 = true end
+                if Chevron==8 and DialingAddress[8]=="#" and SG.DialingSymbol~="#" then Chevr9 = false Chevr9n = 0 end
+                if SG.DialingAddress:len()>7 then Chevr8 = true end
+                if SG.DialingAddress:len()>8 then Chevr9 = true end
+                if SG.Chevron<7 and Chevron<7 then Chevr8 = false Chevr8n = 0 end
+                if SG.Chevron<8 and Chevron<8 then Chevr9 = false Chevr9n = 0 end]]
+            else
+                if Chevron>=8 then Chevr8 = true end
+                if Chevron==9  then Chevr9 = true end
+            end
+            if Chevr8 and Chevr8n==0 then
+                timer.create("8nchev",0.05,9,
+                    function()
+                        if Chevr8n<44 then
+                            Chevr8n=Chevr8n+5
+                        end
+                    end
+                )
+            end
+            if Chevr9 and Chevr9n==0 then
+                timer.create("9nchev",0.05,9,
+                    function()
+                        if Chevr9n<44 then
+                            Chevr9n=Chevr9n+5
+                        end
+                    end
+                )
+            end
+            if Chevron~=Chevron_ and SG.Chevron>0 and SG.Active and not SG.Inbound then
+                    snd.emitEntity(ME, "alexalx/glebqip/dp_encoded.wav")
+            end    
+            if SG.ChevronLocked~=ChevronLocked_ and SG.Active and not SG.Open and not SG.Inbound 
+            and SG.ChevronLocked then
+                Locked=true
+                timer.create("Compl",0.2,6,function()
+                    Compl=Compl+1
+                    if Compl%2~=0 then
+                        snd.emitEntity(ME, "alexalx/glebqip/dp_lock.wav")
+                        requreDraw()
+                    end
+                end
+                )
+            end
+            if SG.Open then Locked=false end
+            if SG.Chevron<-6 and not SG.Inbound and ECode==0 and SG.Active then
+                ECode=math.abs(SG.Chevron)<SG.DialingAddress:len() and 2 or 1
+            end  
+            if ECode>0 and SG.Chevron>=0 and not SG.Unstable then
+                ECode=0 
+            end
+            if SG.Unstable then ECode=2 end
+            --if Locked and not SG.Active then ECode=3 Locked=false timer.simple(2,function() ECode=0 end) end
+            Chevron_=Chevron
+            ChevronLocked_=SG.ChevronLocked
+        end
+    )
+end

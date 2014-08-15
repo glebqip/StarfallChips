@@ -1,0 +1,394 @@
+--@name RIUAuto
+--@author glebqip(RUS)
+--@include Lib/RTable
+
+local RIU = {}
+
+local wire = loadLibrary "wire"
+local hook = loadLibrary "hook"
+local timer = loadLibrary "timer"
+local R = require "Lib/RTable"
+local ME = loadLibrary("ents").self()
+local tonum = tonumber
+local function tonumber(number)
+    if type(number) == "boolean" then 
+        return number and 1 or 0
+    else
+        return tonum(number)
+    end
+end
+
+local function GetFirstKey(t)
+    local k = next(t)
+    return k
+end
+
+local function GetLastKey(t)    
+    local lk = -math.huge
+    for ki in pairs(t) do
+        lk = math.max(lk,ki)
+    end
+    return lk
+end
+
+local data = R{
+    Connected = false,
+    On1        = false,
+    On2        = false,
+    
+    Plus1      = false,
+    Plus2      = false,
+    
+    Minus1     = false,
+    Minus2     = false,
+    
+    Menu1      = false,
+    Menu2      = false,
+    
+    str1      = "                    |                    ",
+    str2      = "                    |                    ",
+
+    Arrive = true,
+    
+}
+
+--[НОМЕР] = {НАЗВАНИЕ,ПРАВАЯ СТОРОНА,СТАНЦИЯ ПЕРЕХОДА}
+RIU.Stations = 
+{
+    [109] = {"Industrial'naya",         false,0   },
+    [110] = {"Moskovskaya",             true ,0   },
+    [111] = {"Oktabr'skaya",            false,0   },
+    [112] = {"Ploshad' Mira",           false,0   },
+    [113] = {"Novoarmeyskaya",          false,0   },
+    [114] = {"Vokzal'naya",             false,0   },
+    [115] = {"Komsomol'skaya",          true ,4215},
+    [116] = {"Elektrosila",             false,0   },
+    [117] = {"Teatral'naya Ploshad'",   false,0   },
+    [118] = {"Park Pobedy",             true ,0   },
+    [119] = {"Sineozernaya",            false,0   },
+    [121] = {"Minskaya",                false,0   },
+}
+
+local EStations = {109,111,112,113,114,116,121}
+
+local sT = GetFirstKey(RIU.Stations)
+local eT = GetLastKey(RIU.Stations)
+local startSt = sT
+local endSt = eT
+RIU.path = 1
+RIU.station = nil
+RIU.Arrive = true
+local state = 1
+RIU.Train = nil
+
+local tN =
+{
+    "Informator -",
+    "Informator +",
+    "Menu",
+    "Off",
+    "On",
+}
+
+local function editTrainButtons()
+    if not RIU.Train then return end
+    local wagNum = RIU.Train[65535]
+    wagNum = wagNum-1
+    for i2=0,1 do
+        for i=2,6 do
+            for i1=1,16 do
+                RIU.Train[i2*wagNum*65536+32767+32*(i<5 and i or i+7)+i1] = i1<=#tN[i-1] and string.byte(tN[i-1][i1]) or 0
+            end
+        end
+    end
+end
+
+local function Sound(...)
+    if not RIU.Train then return end
+    for _,v in pairs({...}) do
+        if RIU.Stations[v] or v == 4215 or v == 120 then
+            RIU.Train[49164] = tonumber("0"..(tostring(v)[1] == "1" and "3" or "4")..tostring(v):sub(-2,-1))
+        else
+            RIU.Train[49164] = v
+        end
+    end
+end
+
+local function endS(station)
+    if (station<=startSt and RIU.path>1) or (station>=endSt and RIU.path<2) then return true end
+    return false
+end
+
+local function changeLine()
+    state = 6
+end
+
+local function playArriving()
+    local nextStation = RIU.station+(RIU.path>1 and -1 or 1)
+    Sound(0006,0000,0001,0005,0003)
+    if endS(RIU.station) then 
+        Sound(0230,0222,0006,0002,0221,RIU.station)
+        if RIU.Stations[RIU.station][2] then
+            Sound(0215)
+        end
+        changeLine()
+        return 
+    end
+	
+    Sound(RIU.station)
+    if RIU.Stations[RIU.station][2] then
+        Sound(0215)
+    end
+	
+    if RIU.Stations[RIU.station][3] > 0 then
+        Sound(0202,0203,RIU.Stations[RIU.station][3])
+    end
+
+    if RIU.Stations[nextStation] == nil then
+        Sound(0230,nextStation)
+        RIU.station = RIU.station+(RIU.path>1 and -1 or 1) 
+        nextStation = RIU.station+(RIU.path>1 and -1 or 1) 
+    end
+    Sound(0002,0219,nextStation)
+    if RIU.Stations[nextStation][2] then
+        Sound(0215)
+    end
+
+    if RIU.Stations[nextStation][3] > 0 then
+        Sound(0202,0203,RIU.Stations[nextStation][3])
+    end
+    Sound(0006) 
+end
+
+local function playDepeate()
+    Sound(0006,0000,0001,0005)
+    local nextStation = RIU.station+(RIU.path>1 and -1 or 1)
+    if (sT<startSt and RIU.path == 2) or (eT>endSt and RIU.path == 1) then 
+        Sound(0210,RIU.path>1 and startSt or endSt,0002)
+    end
+    Sound(0003,0218)
+    
+    if RIU.Stations[nextStation] == nil then
+        Sound(0230,nextStation)
+        RIU.station = RIU.station+(RIU.path>1 and -1 or 1) 
+        nextStation = RIU.station+(RIU.path>1 and -1 or 1) 
+    end
+    Sound(0219,nextStation)
+    if RIU.Stations[nextStation][2] then
+        Sound(0215)
+    end
+    
+    if RIU.Stations[nextStation][3] > 0 then
+        Sound(0202,0203,RIU.Stations[nextStation][3])
+    end
+    Sound(0006)   
+end
+
+local function str()
+    if not data.Connected then return end
+    if RIU.station == 0 and state == 4 then state = -(state) end
+    if RIU.station ~= 0 and state < 0 then state = -(state) end
+    local str1,str2
+    if state == 1 then
+        str1 = "RIUAuto v 1 rev 1"
+        str2 = "Press MENU to start"
+    elseif state == 2 then
+        local curtime = timer.curtime()%8/2
+        if curtime<1 then
+            str1 = "Choose first station"
+        elseif curtime<2 then
+            str1 = "with + and - buttons"
+        elseif curtime<3 then
+            str1 = "when you choose"
+        else
+            str1 = "press MENU button"
+        end
+        str2 = RIU.Stations[startSt][1]
+    elseif state == 3 then
+        local curtime = timer.curtime()%8/2
+        if curtime<1 then
+            str1 = "Choose last station"
+        elseif curtime<2 then
+            str1 = "with + and - buttons"
+        elseif curtime<3 then
+            str1 = "when you choose"
+        else
+            str1 = "press MENU button"
+        end
+        str2 = RIU.Stations[endSt][1]
+    elseif state == 4 then
+        local Station = RIU.Stations[RIU.station] and RIU.station or RIU.station+(RIU.path>1 and -1 or 1)
+        local nextSt = Station+(RIU.path>1 and -1 or 1)
+              nextSt = RIU.Stations[nextSt] and nextSt or nextSt+(RIU.path>1 and -1 or 1)
+        local str1T = (RIU.Stations[Station][2] and " R" or "")--..(RIU.Arrive and "<" or "")
+        str1 = "C:"..RIU.Stations[Station][1]
+        if #str1<20-#str1T then
+            str1 = str1..str1T            
+        else
+            str1 = str1:sub(1,-3-#str1T).."..."..str1T
+        end
+        
+        if endS(Station) then
+            str2 = "Last station"
+        else
+            local str2T = (RIU.Stations[nextSt][2] and " R" or "")..(endS(nextSt) and " E" or "")--..(not RIU.Arrive and "<" or "")
+            str2 = "N:"..RIU.Stations[nextSt][1]
+            if #str2<20-#str2T then
+                str2 = str2..str2T            
+            else
+                str2 = str2:sub(1,17-#str2T).."..."..str2T
+            end
+        end
+    elseif state == 5 then
+        local curtime = timer.curtime()%8/2
+        if curtime<1 then
+            str1 = "Settings changed:"
+            str2 = "Path:"..(RIU.path>1 and "II" or "I")
+        elseif curtime<2 then
+            str1 = "Start station:"
+            str2 = RIU.Stations[RIU.path == 2 and endSt or startSt][1]
+        elseif curtime<3 then
+            str1 = "End station:"
+            str2 = RIU.Stations[RIU.path == 1 and endSt or startSt][1]
+        elseif curtime<4 then
+            str1 = "press MENU button"
+            str2 = "to confim"
+        else
+            str1 = "press \"+\" or \"-\""
+            str2 = "button to reset"
+        end
+    else
+        local curtime = timer.curtime()%4/2
+        str1 = curtime<1 and "ERROR! ERROR!" or ""
+        str2 = curtime>=1 and "No information..." or ""
+    end
+    
+    if data.On1 then
+        data.str1 = str1.."|"..str2
+    else
+        data.str1 = "|"
+    end
+    
+    if data.On2 then
+        data.str2 = str1.."|"..str2
+    else
+        data.str2 = "|"
+    end
+end
+
+local function draw(cab,old)
+    local wagNum = RIU.Train[65535]
+    wagNum = wagNum-1
+    local stri = {}
+    if cab == 1 then
+        stri = string.explode(data.str1:upper(),"|")
+    else
+        stri = string.explode(data.str2:upper(),"|")
+    end
+    local old = string.explode(old,"|")
+    --if cab == 1 then
+    for i=1,math.max(#old[1],#stri[1]) do
+        RIU.Train[(cab-1)*wagNum*65536+32767+i] = stri[1][i]:byte() or 0
+    end
+    for i=1,math.max(#old[2],#stri[2]) do
+        RIU.Train[(cab-1)*wagNum*65536+32767+32+i] = stri[2][i]:byte() or 0
+    end
+end
+
+local function getInputs()
+    if not RIU.Train then data.Connected = false return end
+    data.Connected = true    
+    data.Arrive = RIU.Arrive
+    
+    local wagNum = RIU.Train[65535]
+    wagNum = wagNum-1
+    for i=0,1 do
+        data["On"..i+1] = RIU.Train[i*wagNum*65536+1029]>0 and RIU.Train[i*wagNum*65536+10]>0 and RIU.Train[i*wagNum*65536+5]>0
+        data["Minus"..i+1] = data["On"..i+1] and RIU.Train[i*wagNum*65536+979]>0 or false
+        data["Plus"..i+1] = data["On"..i+1] and RIU.Train[i*wagNum*65536+984]>0 or false
+        data["Menu"..i+1] = data["On"..i+1] and RIU.Train[i*wagNum*65536+989]>0 or false
+        --RIU.Train[i*wagNum*65536+1037] = tonumber(data["On"..i+1] and endS(RIU.station) and state == 4)
+        local Station = RIU.Stations[RIU.station] and RIU.station or RIU.station+(RIU.path>1 and -1 or 1)
+        --RIU.Train[i*wagNum*65536+1042] = tonumber(data["On"..i+1] and RIU.Stations[Station][2] and state == 4)
+        --RIU.Train[i*wagNum*65536+1047] = tonumber(data["On"..i+1] and RIU.Train[i*wagNum*65536+48]>0 and state == 4)-- or 0
+    end
+end
+
+function Play()
+    if state == 4 then
+        if not RIU.Arrive then
+            playArriving()
+        else
+            if not endS(RIU.station) then
+                playDepeate()
+            end
+        end
+    end
+end
+
+--States:
+--1 - Welcome Screen
+--2 - Choose start station
+--3 - Choose end station
+--4 - Normal state
+--5 - Confim a settings (on last stations)
+local I1 = 1
+local I2 = #EStations
+data(
+    function(key,old,new)
+        if not data.Connected then return end
+            
+        if key == "Connected" then editTrainButtons() end
+        
+        if key:sub(1,-2) == "str" then
+            local cabNum = tonumber(key[#key])
+            draw(cabNum,old,new)
+        end
+        
+        if key:sub(1,-2) == "Plus" and new then
+            if state == 2 then
+                I1 = I1+1
+            elseif state == 3 then
+                I2 = I2+1
+            elseif state == 5 then state = 1 return end
+        end
+        
+        if key:sub(1,-2) == "Minus" and new then
+            if state == 2 then
+                I1 = I1-1
+            elseif state == 3 then
+                I2 = I2-1
+            elseif state == 5 then state = 1 end
+        end
+        
+        if key:sub(1,-2) == "Menu" and new then
+            if state < 3 then 
+                state = state+1
+            elseif state < 5 then
+                state = 5
+            else
+                state = 4
+                Sound(0006,0000,0001,0005,0003,0201,0211,RIU.path>1 and endSt or startSt,0000,RIU.path<2 and endSt or startSt,0006)
+            end
+        end
+        
+        if I1>#EStations then I1 = #EStations end
+        if I1<1 then I1 = 1 end
+        startSt = EStations[I1]
+        if I2>#EStations then I2 = #EStations end
+        if I2<1 then I2 = 1 end
+        endSt = EStations[I2]
+        if startSt > endSt and state > 4 then I1 = endSt I2 = startSt end
+        
+        if key == "Arrive" then
+            print(RIU.Arrive, RIU.station)
+            Play()
+        end
+    end
+)
+
+--hook.add("think","RIUButtons",getInputs)
+hook.add("think","RIUstr",str)
+timer.create("RIUButtons",0.1,0,getInputs)
+--timer.create("RIUstr",0.1,0,str)
+return RIU

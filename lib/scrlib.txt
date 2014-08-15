@@ -1,0 +1,239 @@
+--@name Lib/ScrLib
+--@author Mijyuoon
+ 
+if SERVER then return end
+ 
+local render = loadLibrary "render"
+local scr = { render = render }
+ 
+function scr.clear(col)
+    render.clear(col)
+end
+ 
+function scr.drawRect(x,y,w,h,col)
+    render.setColor(col)
+    render.drawRect(x,y,w,h)
+end
+ 
+function scr.drawRectText(x,y,w,h,col,tex,ang)
+    if ang==nil then ang=0 end
+    render.setTexture(render.getTextureID(tex))
+    render.setColor(col)
+    render.drawTexturedRect(x,y,w,h)
+end
+ 
+function scr.drawRectTextRot(x,y,w,h,col,tex,ang)
+    if ang==nil then ang=0 end
+    render.setTexture(render.getTextureID(tex))
+    render.setColor(col)
+    render.drawTexturedRectRotated(x,y,w,h,ang)
+end
+ 
+function scr.drawLine(x1,y1,x2,y2,col,sz)
+    render.setColor(col)
+    if x1 == x2 then
+        -- vertical line
+        local wid =  (sz or 1) / 2
+        render.drawRect(x1-wid, y1, wid*2, y2-y1)
+    elseif y1 == y2 then
+        -- horizontal line
+        local wid =  (sz or 1) / 2
+        render.drawRect(x1, y1-wid, x2-x1, wid*2)
+    else
+        -- other lines
+        local x3 = (x1 + x2) / 2
+        local y3 = (y1 + y2) / 2
+        local wx = math.sqrt((x2-x1) ^ 2 + (y2-y1) ^ 2)
+        local angle = math.deg(math.atan2(y1-y2, x2-x1))
+        render.setTexture()
+        render.drawTexturedRectRotated(x3, y3, wx, (sz or 1), angle)
+    end
+end
+ 
+local function rect_ol(x,y,w,h,c)
+    scr.drawLine(x-1,y,x+w,y,c)
+    scr.drawLine(x+w,y,x+w,y+h,c)
+    scr.drawLine(x,y+h,x+w,y+h,c)
+    scr.drawLine(x,y,x,y+h,c)
+end
+ 
+function scr.drawRectOL(x,y,w,h,col,sz)
+    local wid = sz or 1
+    if wid < 0 then
+        for i=0, wid+1, -1 do
+            rect_ol(x+i, y+i, w-2*i, h-2*i, col)
+        end
+    elseif wid > 0 then
+        for i=0, wid-1 do
+            rect_ol(x+i, y+i, w-2*i, h-2*i, col)
+        end
+    end
+end
+ 
+
+
+function scr.drawCircle(x,y,r,col)
+    render.setColor(col)
+    render.drawCircle(x,y,r)
+end
+function scr.circle(dx,dy,rx,ry,num,rot)
+    local cos, sin, rad, floor = math.cos, math.sin, math.rad, math.floor
+    local vert, s, c = {}, 0, 1
+    local prec = floor(360 / (num or 90))
+    for i=0, 360-prec, prec do
+        local radd = rad(i+(rot or 0))
+        local x, y = cos(radd), sin(radd)
+        local u, v = (x+1)/2, (y+1)/2
+        local xs = x * rx * c - y * ry * s + dx
+        local ys = x * rx * s + y * ry * c + dy
+        table.insert(vert, { x = xs, y = ys, u = u, v = v })
+    end
+    return render.createPoly(vert)
+end
+ 
+function scr.poly(xr,yr,argv)
+    local vert = {}
+    for i=1, #argv, 2 do
+        local xs, ys = (argv[i] or 0)+xr, (argv[i+1] or 0)+yr
+        local u, v = (xs+1)/2, (ys+1)/2
+        table.insert(vert, { x = xs, y = ys, u = u, v = v })
+    end
+    return render.createPoly(vert)
+end
+ 
+function scr.drawPoly(poly,col)
+    render.setColor(col)
+    render.setTexture()
+    render.drawPoly(poly)
+end
+ 
+function scr.drawPolyOL(poly,col,sz)
+    for i=1, poly.length do
+        local va, vb = poly[i], (poly[i+1] or poly[1])
+        scr.drawLine(va.x, va.y, vb.x, vb.y, col, sz)
+    end
+end
+ 
+function scr.createFont(font,size,weight,antialias,additive,shadow,outline,blur)
+    if antialias == nil then
+        antialias = true
+    end
+    return render.createFont(font,size,weight,antialias,additive,shadow,outline,blur)
+end
+ 
+function scr.drawText(x,y,text,xal,yal,col,font)
+    render.setFont(font)
+    render.setColor(col)
+    if yal == 2 then yal = 4 end
+    render.drawText(x,y,text,xal,yal)
+end
+ 
+function scr.textSize(text,font)
+    render.setFont(font)
+    return render.getTextSize(text)
+end
+ 
+function scr.cursorPos(ply)
+    return render.cursorPos(ply)
+end
+
+function scr.drawSGCircle(X,Y,RADX,RADY,col,size,ang)
+    local _PI,sin,cos = math.pi,math.sin,math.cos
+    for i=1,40 do
+        --local CLineS=sin(_PI-(2*_PI/40)*i+math.rad(ang or 0))
+        local rad = math.rad(180-(360/40)*i+(ang+4.6 or 0.0))
+        local CLineS=sin(rad)
+        local CLineC=cos(rad)
+        scr.drawLine(CLineS*RADX+X,CLineC*RADX+Y,CLineS*RADY+X,CLineC*RADY+Y,col,size)
+    end
+    end 
+    
+    local isSetted
+    function scr.generateChevPos(X,Y,RAD,RAD1)  
+        local _PI,sin,cos = math.pi,math.sin,math.cos
+        local CLineS,CLineS
+        ChevPolyBox  = {{},{}}
+        ChevPolyChev  = {{},{}}
+        for i=0,8 do
+            local rad = math.rad(180-360/9*i)
+            local theta = math.rad(360/9*i+180)
+            CLineS=X+sin(rad)*RAD
+            CLineC=Y+cos(rad)*RAD
+            local ChevBoxC = {
+                sin(theta+0.02)*(RAD+7), cos(theta+0.02)*(RAD+7),
+                sin(theta-0.02)*(RAD+7), cos(theta-0.02)*(RAD+7),
+                sin(theta-0.025)*RAD, cos(theta-0.025)*RAD,
+                sin(theta)*(RAD-6), cos(theta)*(RAD-6),
+                sin(theta+0.025)*RAD, cos(theta+0.025)*RAD
+            }
+            RADO=RAD+5
+            local ChevBoxO = {
+                sin(theta+0.02)*(RADO+7), cos(theta+0.02)*(RADO+7),
+                sin(theta-0.02)*(RADO+7), cos(theta-0.02)*(RADO+7),
+                sin(theta-0.025)*RADO, cos(theta-0.025)*RADO,
+                sin(theta)*(RADO-6), cos(theta)*(RADO-6),
+                sin(theta+0.025)*RADO, cos(theta+0.025)*RADO
+            }
+            local ChevrC = {
+                sin(theta+0.1)*(RAD1+14), cos(theta+0.1)*(RAD1+14),
+                sin(theta+0.055)*(RAD1+14), cos(theta+0.055)*(RAD1+14),
+                sin(theta+0.03)*(RAD1+3), cos(theta+0.03)*(RAD1+3),
+                sin(theta-0.04)*(RAD1+3), cos(theta-0.04)*(RAD1+3),
+                sin(theta-0.055)*(RAD1+14), cos(theta-0.055)*(RAD1+14),
+                sin(theta-0.1)*(RAD1+13), cos(theta-0.1)*(RAD1+13),
+                sin(theta-0.04)*(RAD1-8), cos(theta-0.04)*(RAD1-8),
+                sin(theta+0.04)*(RAD1-7), cos(theta+0.04)*(RAD1-7),
+            }
+            RAD1O=RAD1-4
+            local ChevrO = {
+                sin(theta+0.1)*(RAD1O+14), cos(theta+0.1)*(RAD1O+14),
+                sin(theta+0.055)*(RAD1O+14), cos(theta+0.055)*(RAD1O+14),
+                sin(theta+0.03)*(RAD1O+3), cos(theta+0.03)*(RAD1O+3),
+                sin(theta-0.04)*(RAD1O+3), cos(theta-0.04)*(RAD1O+3),
+                sin(theta-0.055)*(RAD1O+14), cos(theta-0.055)*(RAD1O+14),
+                sin(theta-0.1)*(RAD1O+13), cos(theta-0.1)*(RAD1O+13),
+                sin(theta-0.04)*(RAD1O-8), cos(theta-0.04)*(RAD1O-8),
+                sin(theta+0.04)*(RAD1O-7), cos(theta+0.04)*(RAD1O-7),
+            }
+            RAD2=RAD1+10
+            ChevPolyBox[1][i]=scr.poly(X,Y,ChevBoxC)
+            ChevPolyBox[2][i]=scr.poly(X,Y,ChevBoxO)
+            if i==0 then continue end
+            ChevPolyChev[1][i]=scr.poly(X,Y,ChevrC)
+            ChevPolyChev[2][i]=scr.poly(X,Y,ChevrO) 
+        end
+        isSetted=true
+    end
+    
+    function scr.drawSGChevronsBox(col,state,chevrons)
+        local convt = { 9, 8, 7, 4, 3, 2, 1, 6, 5 }
+        --scr.drawRect(X,Y,1,1,Color(255,255,255,255))
+        colt = {col,Color(255,0,0,255)}
+        state=state+1
+        for i=0,8 do
+            id=convt[i+1]-1
+            scr.drawPoly(ChevPolyBox[state][id],colt[chevrons[i+1]+1])
+        end
+    end 
+    
+    function scr.drawSGChevrons(col,state,chevrons)
+        local convt = { 9, 8, 7, 4, 3, 2, 1, 6, 5 }
+        OP=state*4
+        colt = {col,Color(255,0,0,255)}
+        scr.drawLine(260,108+OP,262,101+OP,colt[chevrons[7]+1],2)
+        scr.drawLine(262,102+OP,271,102+OP,colt[chevrons[7]+1],2)
+        scr.drawLine(271,102+OP,264,122+OP,colt[chevrons[7]+1],2)
+        scr.drawLine(264,122+OP,258,111+OP,colt[chevrons[7]+1],2)
+        scr.drawLine(251,108+OP,249,101+OP,colt[chevrons[7]+1],2)
+        scr.drawLine(250,102+OP,239,102+OP,colt[chevrons[7]+1],2)
+        scr.drawLine(239,102+OP,248,122+OP,colt[chevrons[7]+1],2)
+        scr.drawLine(248,122+OP,252,111+OP,colt[chevrons[7]+1],2)
+        state=state+1
+        for i=0,8 do
+            if i==6 then continue end
+            id=convt[i+1]-1
+            scr.drawPolyOL(ChevPolyChev[state][id],colt[chevrons[i+1]+1],2)  
+        end
+    end 
+
+return scr

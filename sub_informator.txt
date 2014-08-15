@@ -1,0 +1,641 @@
+--@name RIU Train
+--@author glebqip(RUS)
+--@include Lib/RTable
+
+local wire = loadLibrary "wire"
+local hook = loadLibrary "hook"
+local timer = loadLibrary "timer"
+local R = require "Lib/RTable"
+local ME = loadLibrary("ents").self()
+
+local tonum = tonumber
+local function tonumber(number)
+    if type(number) == "boolean" then 
+        return number and 1 or 0
+    else
+        return tonum(number)
+    end
+end
+
+local function GetFirstKey(t)
+    local k = next(t)
+    return k
+end
+
+local function GetLastKey(t)    
+    local lk = -math.huge
+    for ki in pairs(t) do
+        lk = math.max(lk,ki)
+    end
+    return lk
+end
+
+
+--[[
+for k,v in mpairs(table) do
+    print(k)
+end
+]]--
+
+--[[
+0003  ПИТЕРСКИЙ ТРЫНЬ
+0004  АМЕРИКАНСКИЙ ДИН ДОН
+0005  ЩЕЛЧОК
+0006  МЯГКИЙ ЩЕЛЧОК
+0007  НАВОДКИ БПСН
+0201  ИНФОРМАТОР ГОТОВ К РАБОТЕ
+0202  ПЕРЕХОД
+0203  НА СТАНЦИЮ
+0204  ПАССАЖИРЫ, ОТПУСТИТЕ ПОЖАЛУЙСТА ДВЕРИ
+0205  НЕ ЗАДЕРЖИВАЙТЕ ПОЕЗД, ОТПУСТИТЕ ПОЖАЛУЙСТА ДВЕРИ
+0206  ПАССАЖИРЫ, ПОЕЗД ДАЛЬШЕ НЕ ИДЁТ, ОСВОБОДИТЕ ВАГОНЫ.
+0207  ПОЖАЛУЙСТА, ОСВОБОДИТЕ ВАГОНЫ
+0208  ПОЖАЛУЙСТА, ЗАХОДИТЕ И ВЫХОДИТЕ БЫСТРЕЕ
+0209  ЗАХОДИТЕ БЫСТРЕЕ, НЕ ЗАДЕРЖИВАЙТЕСЬ У ДВЕРЕЙ, ПРОХОДИТЕ ДАЛЬШЕ В ВАГОНЫ
+0210  ПОЕЗД СЛЕДУЕТ К СТАЦНИИ
+0211  НАПРАВЛЕНИЕ ДВИЖЕНИЯ
+0212  КОНЕЧНАЯ, ПОЕЗД ДАЛЬШЕ НЕ ИДЁТ. УВАЖАЕМЫЕ ПАССАЖИРЫ, ВЫХОДЯ ИЗ ВАГОНОВ НЕ ЗАБЫВАЙТЕ СВОИ ВЕЩИ
+0213  УВАЖАЕМЫЕ ПАССАЖИРЫ, ПРИ ДВИЖЕНИИ ПОЕЗДА ПРИСЛОНЯТЬСЯ К ДВЕРЯМ ОПАСНО
+0214  УВАЖАЕМЫЕ ПАССАЖИРЫ, БУДЬТЕ ВЗАИМНО ВЕЖЛИВЫ, УСТУПАЙТЕ МЕСТА ИНВАЛИДАМ, ЛЮДЯМ В ВОЗРАСТЕ, ПАССАЖИРАМ С ДЕТЬМИ
+0215  ВЫХОД НА ПРАВУЮ ПЛАТФОРМУ
+0216  БЕЗ МАНЁВРОВ
+0217  УВАЖАЕМЫЕ ПАССАЖИРЫ, СОХРАНЯЙТЕ СПОКОЙСТВИЕ, ПОЕЗД БУДЕТ ОТПРАВЛЕНИ ЧЕРЕЗ НЕСКОЛЬКО МИНУТ
+0218  ОСТОРОЖНО, ДВЕРИ ЗАКРЫВАЮТСЯ
+0219  СЛЕДУЮЩАЯ СТАНЦИЯ
+0220  СТАНЦИЯ
+0221  ПОЕЗД ПРИБЫЛ НА КОНЕЧНУЮ СТАНЦИЮ
+0222  НЕ ЗАБЫВАЙТЕ СВОИ ВЕЩИ В ВАГОНАХ ЭЛЕКТРОПОЕЗДА
+0223  ПОЕЗД СЛЕДУЕТ ДО СТАНЦИИ
+0224  КОНЕЧНАЯ, ПОЕЗД ДАЛЬШЕ НЕ ИДЁТ, ПРОСЬБА ВЫЙТИ ИЗ ВАГОНОВ
+0225  ОСТОРОЖНО ДВЕРИ ЗАКРЫВАЮТСЯ, СЛЕДУЮЩАЯ СТАНЦИЯ
+0226  ПРИ ВЫХОДЕ ИЗ ПОЕЗДА, НЕ ЗАБЫВАЙТЕ СВОИ ВЕЩИ
+0227  ПРИ ОБНАРУЖЕНИИ ЗАБЫТЫХ ВЕЩЕЙ, СООБЩАЙТЕ МАШИНИСТУ
+0228  УВАЖАЕМЫЕ ПАССАЖИРЫ, БУДЬТЕ ОСТОРОЖНЫ - ПОЕЗД ОТПРАВЛЯЕТСЯ
+0229  УВАЖАЕМЫЕ ПАССАЖИРЫ, ПРОСЬБА СОБЛЮДАТЬ СПОКОЙСТВИЕ - ПОЕЗД СКОРО ОТПРАВИТСЯ
+0230  УВАЖАЕМЫЕ ПАССАЖИРЫ
+0231  ПЛАТФОРМА СПРАВА
+0232  БУДЬТЕ ВЗАИМНО ВЕЖЛИВЫ, УСТУПАЙТЕ МЕСТА ИНВАЛИДАМ, ПОЖИЛЫМ ЛЮДЯМ, ПАССАЖИРАМ С ДЕТЬМИ И БЕРЕМЕННЫМ ЖЕНЩИНАМ
+]]--
+
+local data = R{
+    Connected = false,
+    On1        = false,
+    On2        = false,
+    
+    ProgramI1  = false,
+    ProgramI2  = false,
+    
+    ProgramII1 = false,
+    ProgramII2 = false,
+    
+    Plus1      = false,
+    Plus2      = false,
+    
+    Minus1     = false,
+    Minus2     = false,
+    
+    Menu1      = false,
+    Menu2      = false,
+    
+    str1      = "                   |                   ",
+    str2      = "                   |                   ",
+    
+}
+
+--[НОМЕР] = {НАЗВАНИЕ,ПРАВАЯ СТОРОНА,ВЕЖЛИВОСТЬ,ВЕЩИ,ПРИСЛНОЯТЬСЯ К ДВЕРЯМ,СТАНЦИЯ ПЕРЕХОДА}
+local Stations = 
+{
+    [109] = {"Industrial'naya",         false,true ,false,false,0   },
+    [110] = {"Moskovskaya",             true ,false,false,true ,0   },
+    [111] = {"Oktabr'skaya",            false,false,true ,false,0   },
+    [112] = {"Ploshad' Mira",           false,false,false,true ,0   },
+    [113] = {"Novoarmeyskaya",          false,true ,true ,false,0   },
+    [114] = {"Vokzal'naya",             false,false,true ,false,0   },
+    [115] = {"Komsomol'skaya",          true ,true ,false,false,4215},
+    [116] = {"Elektrosila",             false,false,false,true ,0   },
+    [117] = {"Teatral'naya Ploshad'",   false,false,true ,false,0   },
+    [118] = {"Park Pobedy",             true,false ,false,true ,0   },
+    [119] = {"Sineozernaya",            false,true ,false,false,0   },
+    --[120] = {"Lesnaya",                 -1                          },
+    [121] = {"Minskaya",                false,false,true,true  ,0   },
+}
+
+local EStations = {109,111,112,113,114,116,121}
+
+wire.adjustInputs(
+    {"Train"},
+    {"wirelink"}
+)
+local sT = GetFirstKey(Stations)
+local eT = GetLastKey(Stations)
+local Type = 1
+local startSt = 109
+local endSt = 121
+local path = 1
+local station = path == 1 and startSt or endSt
+local Arrive = true
+local state = 1
+
+local tN =
+{
+    "Informator -",
+    "Informator +",
+    "Menu",
+    "Off",
+    "On",
+}
+
+local function editTrainButtons()
+    if not wire.ports.Train then return end
+    local wagNum = wire.ports.Train[65535]
+    wagNum = wagNum-1
+    for i2=0,1 do
+        for i=2,6 do
+            for i1=1,16 do
+                wire.ports.Train[i2*wagNum*65536+32767+32*(i<5 and i or i+7)+i1] = i1<=#tN[i-1] and string.byte(tN[i-1][i1]) or 0
+            end
+        end
+    end
+end
+
+local function Sound(...)
+    if not wire.ports.Train then return end
+    for _,v in pairs({...}) do
+        if Stations[v] or v == 4215 or v == 120 then
+            wire.ports.Train[49164] = tonumber("0"..(tostring(v)[1] == "1" and "3" or "4")..tostring(v):sub(-2,-1))
+        else
+            wire.ports.Train[49164] = v
+        end
+    end
+end
+
+local function endS(station)
+    if (station<=startSt and path>1) or (station>=endSt and path<2) then return true end
+    return false
+end
+
+local function changeLine()
+    if path == 2 then
+        station = startSt
+        path = 1
+    else
+        station = endSt
+        path = 2
+    end
+    Arrive = true
+    state = 7
+end
+
+local function playArriving()
+    local nextStation = station+(path>1 and -1 or 1)
+    Arrive = true
+    Sound(0006,0001,0001,0005)
+
+    if Type == 1 then
+        Sound(0220,station)
+        if Stations[station][2] then
+            Sound(0231)
+        end
+        
+        if Stations[station][6] > 0 then
+            Sound(0202,0203,Stations[station][6])
+        end
+           
+        if endS(station) then 
+            Sound(0224,0002,0230,0226,0006)
+            changeLine()
+            return 
+        end
+        if Stations[station][3] then
+            Sound(0230,0232)
+        end
+        if Stations[station][4] then
+            if not Stations[station][3] then Sound(0230) end          
+            Sound(0227)
+        end
+    elseif Type == 2 then
+        Sound(0003)
+        if endS(station) then 
+            Sound(0230,0222,0006,0002,0221,station)
+            if Stations[station][2] then
+                Sound(0215)
+            end
+            changeLine()
+            return 
+        end
+        
+        Sound(station)
+        if Stations[station][2] then
+            Sound(0215)
+        end
+        
+        if Stations[station][6] > 0 then
+            Sound(0202,0203,Stations[station][6])
+        end
+        
+        if Stations[nextStation] == nil then
+            Sound(0230,nextStation)
+            station = station+(path>1 and -1 or 1) 
+            nextStation = station+(path>1 and -1 or 1) 
+        end
+        Sound(0219,nextStation)
+        if Stations[nextStation][2] then
+            Sound(0215)
+        end
+        
+        if Stations[nextStation][6] > 0 then
+            Sound(0202,0203,Stations[nextStation][6])
+        end
+    else
+        Sound(0220,station)
+        if Stations[station][2] then
+            Sound(0215)
+        end
+        
+        if Stations[station][6] > 0 then
+            Sound(0202,0203,Stations[station][6])
+        end
+        
+        if endS(station) then 
+            Sound(0212,0006)
+            changeLine()
+            return 
+        end
+        if Stations[station][4] then
+            Sound(0230,0226)
+        end
+        
+    end   
+    Sound(0006) 
+end
+
+local function playDepeate()
+    local nextStation = station+(path>1 and -1 or 1)
+    Arrive = false
+    Sound(0006,0001,0001,0005)
+        
+    if Type == 1 then    
+        if (sT<startSt and path == 2) or (eT>endSt and path == 1) then 
+            Sound(0223,path>1 and startSt or endSt,0002)
+        end
+        if Stations[nextStation] == nil then
+            Sound(0230,nextStation)
+            station = station+(path>1 and -1 or 1)
+            nextStation = station+(path>1 and -1 or 1) 
+        end       
+        Sound(0218,0219,nextStation)
+        if Stations[nextStation][2] then
+            Sound(0231)
+        end
+    elseif Type == 2 then   
+        Sound(0003) 
+        if (sT<startSt and path == 2) or (eT>endSt and path == 1) then 
+            Sound(0210,path>1 and startSt or endSt,0002)
+        end
+        Sound(0218)
+        
+        if Stations[nextStation] == nil then
+            Sound(0230,nextStation)
+            station = station+(path>1 and -1 or 1) 
+            nextStation = station+(path>1 and -1 or 1) 
+        end
+        Sound(0219,nextStation)
+        if Stations[nextStation][2] then
+            Sound(0215)
+        end
+        
+        if Stations[nextStation][6] > 0 then
+            Sound(0202,0203,Stations[nextStation][6])
+        end
+    else    
+        if (sT<startSt and path == 2) or (eT>endSt and path == 1) then 
+            Sound(0210,path>1 and startSt or endSt,0002)
+        end
+        if Stations[nextStation] == nil then
+            Sound(0230,nextStation)
+            station = station+(path>1 and -1 or 1)
+            nextStation = station+(path>1 and -1 or 1) 
+        end    
+        Sound(0218,0219,nextStation)
+        if Stations[nextStation][2] then
+            Sound(0215)
+        end
+        if Stations[nextStation][3] then
+            Sound(0214)
+        end
+        if Stations[nextStation][5] then
+            Sound(0213)
+        end
+    end 
+    Sound(0006)   
+end
+
+local alrPlayerWarn = false
+local function playIIProgram(Arrive)
+    Sound(0006,0001,0001,0005)
+    if Arrive then
+        if endS(station) then
+            local rand = math.random()
+            Sound(rand>0.5 and 0207 or 0206)
+        else
+            local rand = math.random()
+            Sound(rand>0.5 and 0209 or 0208)
+        end
+    else
+        if not alrPlayerWarn then
+            Sound(Type == 1 and 0229 or 0217)
+            alrPlayerWarn = true
+        else
+            Sound(0228)
+            alrPlayerWarn = false
+        end
+    end
+        
+    Sound(0006)   
+end
+
+local function str()
+    if not data.Connected then return end
+    local str1,str2
+    Train = wire.ports.Train
+    if state == 1 then
+        str1 = "RIU v 1.1 rev 84"
+        str2 = "Press MENU to start"
+    elseif state == 2 then
+        local curtime = timer.curtime()%8/2
+        if curtime<1 then
+            str1 = "Choose first station"
+        elseif curtime<2 then
+            str1 = "with + and - buttons"
+        elseif curtime<3 then
+            str1 = "when you choose"
+        else
+            str1 = "press MENU button"
+        end
+        str2 = Stations[startSt][1]
+    elseif state == 3 then
+        local curtime = timer.curtime()%8/2
+        if curtime<1 then
+            str1 = "Choose last station"
+        elseif curtime<2 then
+            str1 = "with + and - buttons"
+        elseif curtime<3 then
+            str1 = "when you choose"
+        else
+            str1 = "press MENU button"
+        end
+        str2 = Stations[endSt][1]
+    elseif state == 4 then
+        local curtime = timer.curtime()%6/2
+        if curtime<1 then
+            str1 = "Choose your path"
+        elseif curtime<2 then
+            str1 = "when you choose"
+        else
+            str1 = "press MENU button"
+        end
+        if curtime<1.5 then
+            str2 = "\"+\" button = I  path"
+        else
+            str2 = "\"-\" button = II path"
+        end
+    elseif state == 5 then
+        local curtime = timer.curtime()%8/2
+        if curtime<1 then
+            str1 = "Choose playing style"
+        elseif curtime<2 then
+            str1 = "with + and - buttons"
+        elseif curtime<3 then
+            str1 = "when you choose"
+        else
+            str1 = "press MENU button"
+        end
+        str2 = (Type == 1 and "Moscow" or Type == 2 and "St. Petersburg" or "Kiev") .. " style"
+    elseif state == 6 then
+        local Station = Stations[station] and station or station+(path>1 and -1 or 1)
+        local nextSt = station+(path>1 and -1 or 1)
+              nextSt = Stations[nextSt] and nextSt or nextSt+(path>1 and -1 or 1)
+        local str1T = (Stations[Station][2] and " R" or "")..(not Arrive and "<" or "")
+        str1 = "C:"..Stations[Station][1]
+        if #str1<=20-#str1T then
+            str1 = str1..str1T            
+        else
+            str1 = str1:sub(1,-3-#str1T).."..."..str1T
+        end
+        
+        if endS(Station) then
+            str2 = "Last station"
+        else
+            local str2T = (Stations[nextSt][2] and " R" or "")..(endS(nextSt) and " E" or "")..(Arrive and "<" or "")
+            str2 = "N:"..Stations[nextSt][1]
+            if #str2<=20-#str2T then
+                str2 = str2..str2T            
+            else
+                str2 = str2:sub(1,20-#str2T-3).."..."..str2T
+            end
+        end
+    else
+        local curtime = timer.curtime()%8/2
+        if curtime<1 then
+            str1 = "Settings changed:"
+            str2 = "Path:"..(path>1 and "II" or "I")
+        elseif curtime<2 then
+            str1 = "Start station:"
+            str2 = Stations[path == 2 and endSt or startSt][1]
+        elseif curtime<3 then
+            str1 = "End station:"
+            str2 = Stations[path == 1 and endSt or startSt][1]
+        elseif curtime<4 then
+            str1 = "press MENU button"
+            str2 = "to confim"
+        else
+            str1 = "press \"+\" or \"-\""
+            str2 = "button to reset"
+        end
+    end
+    
+    if data.On1 then
+        data.str1 = str1.."|"..str2
+    else
+        data.str1 = "|"
+    end
+    
+    if data.On2 then
+        data.str2 = str1.."|"..str2
+    else
+        data.str2 = "|"
+    end
+end
+
+local function draw(cab,old)
+    local wagNum = wire.ports.Train[65535]
+    wagNum = wagNum-1
+    local stri = {}
+    if cab == 1 then
+        stri = string.explode(data.str1:upper(),"|")
+    else
+        stri = string.explode(data.str2:upper(),"|")
+    end
+    local old = string.explode(old,"|")
+    --if cab == 1 then
+    for i=1,math.max(#old[1],#stri[1]) do
+        wire.ports.Train[(cab-1)*wagNum*65536+32767+i] = stri[1][i]:byte() or 0
+    end
+    for i=1,math.max(#old[2],#stri[2]) do
+        wire.ports.Train[(cab-1)*wagNum*65536+32767+32+i] = stri[2][i]:byte() or 0
+    end
+end
+
+local function getInputs()
+    if not wire.ports.Train then data.Connected = false return end
+    data.Connected = true    
+    
+    local wagNum = wire.ports.Train[65535]
+    wagNum = wagNum-1
+    for i=0,1 do
+        data["On"..i+1] = wire.ports.Train[i*wagNum*65536+1029]>0 and wire.ports.Train[i*wagNum*65536+10]>0 and wire.ports.Train[i*wagNum*65536+5]>0
+        data["ProgramI"..i+1]  = data["On"..i+1] and wire.ports.Train[i*wagNum*65536+1074]>0 or false
+        data["ProgramII"..i+1] = data["On"..i+1] and wire.ports.Train[i*wagNum*65536+1084]>0 or false
+        data["Minus"..i+1] = data["On"..i+1] and wire.ports.Train[i*wagNum*65536+979]>0 or false
+        data["Plus"..i+1] = data["On"..i+1] and wire.ports.Train[i*wagNum*65536+984]>0 or false
+        data["Menu"..i+1] = data["On"..i+1] and wire.ports.Train[i*wagNum*65536+989]>0 or false
+        wire.ports.Train[i*wagNum*65536+1032] = tonumber(data["On"..i+1] and endS(station) and state == 6)
+        local Station = Stations[station] and station or station+(path>1 and -1 or 1)
+        wire.ports.Train[i*wagNum*65536+1037] = tonumber(data["On"..i+1] and Stations[Station][2] and state == 6)
+        wire.ports.Train[i*wagNum*65536+1042] = tonumber(data["On"..i+1] and state ~= 6)
+        wire.ports.Train[i*wagNum*65536+1047] = tonumber(data["On"..i+1] and wire.ports.Train[i*wagNum*65536+48]>0 and state == 6)-- or 0
+    end
+end
+--States:
+--1 - Welcome Screen
+--2 - Choose start station
+--3 - Choose end station
+--4 - Choose path
+--5 - Choose style of playing
+--6 - Normal state
+--7 - Confim a settings (on last stations)
+local I1 = 1
+local I2 = #EStations
+data(
+    function(key,old,new)
+        if not data.Connected then return end
+            
+        if key == "Connected" then editTrainButtons() end
+        
+        if key:sub(1,-2) == "str" then
+            local cabNum = tonumber(key[#key])
+            draw(cabNum,old,new)
+        end
+        
+        if key:sub(1,-2) == "ProgramI" and new then
+            if state == 6 then
+                if not Arrive then
+                    playArriving()
+                else
+                    if not endS(station) then
+                        playDepeate()
+                        station = station+(path>1 and -1 or 1)
+                    else
+                    end
+                end
+            end
+        end
+        
+        if key:sub(1,-2) == "ProgramII" and new then
+            if state == 6 then
+                playIIProgram(Arrive)
+            end
+        end
+        
+        if key:sub(1,-2) == "Plus" and new then
+            if state == 2 then
+                I1 = I1+1
+            end  
+            if state == 3 then
+                I2 = I2+1
+            end  
+            if state == 4 then
+                path = 1
+                state = state+1
+                return
+            end 
+            if state == 5 then
+                Type = Type + 1
+            end          
+            if state == 6 then
+                if not Arrive and not endS(station) then
+                    Arrive = true
+                else
+                    if (station+(path>1 and -1 or 1)>=startSt and path>1) or (station+(path>1 and -1 or 1)<=endSt and path<2) then
+                        if Stations[station+(path>1 and -1 or 1)] == nil then station = station+(path>1 and -1 or 1) return end
+                        station = station+(path>1 and -1 or 1)
+                        Arrive = false
+                    end
+                end
+            end
+            if state == 7 then state = 1 return end
+        end
+        
+        if key:sub(1,-2) == "Minus" and new then
+            if state == 2 then
+                I1 = I1-1
+            end
+            if state == 3 then
+                I2 = I2-1
+            end
+            if state == 4 then
+                path = 2
+                state = state+1
+                return
+            end
+            if state == 5 then
+                Type = Type - 1
+            end
+            if state == 6 then
+                if Arrive then
+                    Arrive = false
+                else
+                    if (station>startSt and path<2) or (station<endSt and path>1) then
+                        if Stations[station-(path>1 and -1 or 1)] == nil then station = station-(path>1 and -1 or 1) return end
+                        station = station-(path>1 and -1 or 1)
+                        Arrive = true
+                    end
+                end
+            end
+            if state == 7 then state = 1 end
+        end
+        
+        if key:sub(1,-2) == "Menu" and new then
+            if state < 5 and state ~=4 then 
+                state = state+1
+            elseif state == 4 then
+            elseif state < 7 then
+                state = 7
+            else
+                state = 6 
+                Arrive = true
+                station = path>1 and endSt or startSt
+                Sound(0006,0001,0001,0005)
+                if Type == 2 then   
+                    Sound(0003) 
+                end
+                Sound(0201,0211,path>1 and endSt or startSt,0000,path<2 and endSt or startSt,0006)
+            end
+        end
+        
+        if I1>#EStations then I1 = #EStations end
+        if I1<1 then I1 = 1 end
+        startSt = EStations[I1]
+        if I2>#EStations then I2 = #EStations end
+        if I2<1 then I2 = 1 end
+        endSt = EStations[I2]
+        if Type>3 then Type = 3 end
+        if Type<1 then Type = 1 end
+        if startSt > endSt and state > 5 then I1 = endSt I2 = startSt path = path==1 and 2 or 1 end
+    end
+)
+
+--hook.add("think","RIUButtons",getInputs)
+hook.add("think","RIUstr",str)
+timer.create("RIUButtons",0.1,0,getInputs)
+--timer.create("RIUstr",0.1,0,str)

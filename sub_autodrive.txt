@@ -1,0 +1,372 @@
+--@name Aurodrive
+--@author glebqip(RUS)
+--@include sub_autodrive_informator
+--@include Lib/RTable
+
+local wire = loadLibrary "wire"
+local hook = loadLibrary "hook"
+local timer = loadLibrary "timer"
+local ents = loadLibrary "ents"
+local RIU = require "sub_autodrive_informator"
+local R = require "Lib/RTable"
+
+local tonum = tonumber
+local function tonumber(number)
+    if type(number) == "boolean" then 
+        return number and 1 or 0
+    else
+        return tonum(number)
+    end
+end
+
+local data = R{
+    Doors = false,
+    infNum = 0,
+}
+-- Wires table
+KB = {}
+KB.X3   =
+{
+        [1]  = true,
+        [2]  = true,
+        [3]  = true,
+        [6]  = false,
+        [20] = true,
+        [25] = false,
+}
+KB[3] = KB.X3
+KB.X2   =
+{
+        [1]  = true,
+        [2]  = true,
+        [3]  = false,
+        [6]  = false,
+        [20] = true,
+        [25] = false,
+}
+KB[2] = KB.X2
+KB.X1   =
+{
+        [1]  = true,
+        [2]  = false,
+        [3]  = false,
+        [6]  = false,
+        [20] = true,
+        [25] = false,
+}
+KB[1] = KB.X1
+KB.O    =
+{
+        [1]  = false,
+        [2]  = false,
+        [3]  = false,
+        [6]  = false,
+        [20] = false,
+        [25] = false,
+}
+KB[0] = KB.O
+KB.T1   =
+{
+        [1]  = false,
+        [2]  = false,
+        [3]  = false,
+        [6]  = true,
+        [20] = true,
+        [25] = false,
+}
+KB[-1] = KB.T1
+KB.T1a  =
+{
+        [1]  = false,
+        [2]  = true,
+        [3]  = false,
+        [6]  = true,
+        [20] = true,
+        [25] = true,
+}
+KB[-2] = KB.T1a
+KB.T2   =
+{
+        [1]  = false,
+        [2]  = true,
+        [3]  = false,
+        [6]  = true,
+        [20] = true,
+        [25] = false,
+}
+KB[-3] = KB.T2
+
+wire.adjustInputs(
+    {"Train",    "TrainLast"},
+    {"wirelink", "wirelink"}
+)
+
+wire.adjustOutputs(
+    {"Test","Test1"},
+    {"Table","Table"}
+)
+local tN =
+{
+    "Start",
+    "BCCD",
+    "Autodrive",
+}
+-- Add new names
+local function editTrainButtons()
+    if not wire.ports.Train then return end
+    local wagNum = wire.ports.Train[65535]
+    wagNum = wagNum-1
+    for i=6,8 do
+        for i1=1,16 do
+            local Name = i1<=#tN[i-5] and string.byte(tN[i-5][i1]) or 0
+            wire.ports.Train[32767+32*(i<8 and i or i+2)+i1] = Name
+            wire.ports.Train[wagNum*65536+32767+32*(i<8 and i or i+2)+i1] = Name
+        end
+    end
+end
+local ConPos
+local function Controller(Pos,Train)
+    ConPos = Pos
+    for k,v in pairs(KB[Pos]) do
+        Train[k] = tonumber(v)
+    end
+end
+
+local function sbor(Type,Train)
+    if Type then 
+        return Train[1]>0 and Train[609]>0 
+    else
+        return Train[6]>0 and Train[609]>0 
+    end
+end
+
+local function stationRk(stationDist)
+    local RKpos = 1
+    if stationDist > 102.1 then RKpos = 1
+    elseif stationDist > 87.3 then RKpos = 2
+    elseif stationDist > 80.2 then RKpos = 3
+    elseif stationDist > 67.3 then RKpos = 5
+    elseif stationDist > 36.4 then RKpos = 6
+    elseif stationDist > 32.3 then RKpos = 7
+    elseif stationDist > 24.4 then RKpos = 8
+    elseif stationDist > 24.4 then RKpos = 9
+    elseif stationDist > 20.6 then RKpos = 10
+    elseif stationDist > 17.2 then RKpos = 12
+    elseif stationDist > 13.9 then RKpos = 13
+    elseif stationDist > 8.5 then RKpos = 14
+    elseif stationDist > 4.8 then RKpos = 15 --4,8
+    elseif stationDist > 3.4 then RKpos = 16 --3,4
+    elseif stationDist > 2.1 then RKpos = 17 --2,1
+    else RKpos = 18 end
+    return RKpos
+end
+local RMaS = false
+local On = {0,0}
+local WagNum
+local function off(Train,WagNum)
+    On[1] = 0
+    On[2] = 0
+    Train[1032] = 0
+    Train[65536*WagNum+1032] = 0
+end
+
+local function openDoors(Train,Side,AddID)
+    Train[AddID+945] = 0
+    Train[AddID+31+tonumber(Side)] = 1
+    timer.simple(2,
+        function()
+            Train[AddID+31+tonumber(Side)] = 0
+        end
+    )
+end
+
+local function KSZD(Train,AddID)
+    Train[28] = 1
+    timer.create("KSZD:"..ents.self():entIndex(),0.1,0,
+        function()
+            if Train[AddID+634] == 1 then Train[28] = 0 timer.stop("KSZD:"..ents.self():entIndex()) end
+            if Train[AddID+1004] == 1 then 
+                Train[AddID+945] = 1 
+                Train[28] = 0 
+                timer.stop("KSZD:"..ents.self():entIndex())
+            end
+        end
+    )
+end
+
+local function Station(Train,stationNum,AddID)
+    local RightSide = RIU.Stations[stationNum][2]
+    openDoors(Train,RightSide,AddID)
+end
+
+--Station(wire.ports.Train,121,65536*2*0)
+local Num
+local stopped = true
+local function think()
+    if not wire.ports.Train then error("Please, connect a chip to first wagon!") end
+    RIU.Train = wire.ports.Train
+    if not wire.ports.TrainLast then error("Please, connect a chip to last wagon!") end
+    WagNum = wire.ports.Train[65535]-1
+    local Train = wire.ports.Train
+    
+    if Train[999] > 0 then On[1] = 1 end
+    if Train[WagNum*65536+999] > 0 then On[2] = 1 end
+    
+    Train[29] = 0
+    data.infNum = Train[48]
+    data.Doors = Train[11] > 0
+    
+    local LastTrain = wire.ports.TrainLast
+    local Speed = math.floor(Train[WagNum*65536*On[2]+376])
+    local Limits = {Train[WagNum*65536*On[2]+384], Train[WagNum*65536*On[2]+385]}
+    if Limits[2] == 0 then Limits[2] = 20 end
+    local Slope = (Train:entity():getAngles().p - LastTrain:entity():getAngles().p)/2*(Train[5]>0 and 1 or -1)
+    local RK = Train[856]
+    local SpeedLimit
+    local stationDist = Train[WagNum*65536*On[2]+49165]
+    local stationNum = Train[WagNum*65536*On[2]+49160] > 0 and Train[WagNum*65536*On[2]+49160] or Train[WagNum*65536*On[2]+49161]
+    local station = (stationDist < (Limits[2]>40 and 150 or 125)) and (stationDist > (stopped and 30 or 0)) and (RIU.Stations[stationNum] ~= nil) --120
+    RIU.station = stationNum
+    RIU.path = wire.ports.Train[WagNum*65536*On[2]+65510]
+    if station and stationDist < 40 and stationDist > (stopped and 20 or 0) then
+        RIU.Arrive = false
+    end
+    Train[17] = 0
+    Train[17] = 1
+    --[[
+    wire.ports.Test = {}
+    wire.ports.Test1 = {
+            STDist =    Train[WagNum*65536*On[2]+49165],
+            stn1 = Train[WagNum*65536*On[2]+49160],
+            stn = Train[WagNum*65536*On[2]+49161],
+            Station = RIU.Station,
+            Arrive = tostring(RIU.Arrive),
+    }]]
+    
+    if On[1] == 0 and On[2] ==0 then Controller(0,wire.ports.Train) return end --Temp
+    
+    if station then
+        Num = 65536*WagNum*On[2]
+        Controller(-1,Train)
+        if RK<stationRk(stationDist-10.8) then --12,5 11
+            Controller(-3,Train)
+        end
+        if RK > 17 then 
+            Train[29] = 1 
+            if Speed==0 then 
+                stopped = true
+                Train[29] = 0 
+                Station(Train,stationNum,65536*WagNum*On[2])
+                off(Train,WagNum) 
+            end
+        end
+        return
+    end
+    if stationDist > 90 then
+        stopped = false
+    end
+    
+    local Accelerate = false
+    local Brake = false
+    -- Logic start
+    -- Speed Limit
+    if Speed<=Limits[2]-10 or Slope > 0.5 or Slope < -0.5 then 
+        RMaS = false  
+    end
+    if Speed>=Limits[2]-5 then 
+        RMaS = true 
+    end
+    
+    if RMaS then
+        SpeedLimit = Limits[2]-10
+    else
+        SpeedLimit = Limits[2]-2
+    end
+    
+    if Limits[1] < 40 then off(Train,WagNum) end
+    
+    if  Speed<=SpeedLimit then Accelerate = true else Accelerate = false end --Slope<-1 or (Slope<1 and
+    if (Slope>1 and Speed>Limits[2]-15) or Speed>=Limits[2]-2 then Brake = true else Brake = false end
+    -- Acceletatiing
+    if Accelerate then
+        Train[29] = 0
+        Controller(1,Train)
+        if sbor(true,Train) then
+            if Slope > -1  then Controller(3,Train) end
+            if Train[455]<500  then Controller(3,Train) end
+            if (Slope > -0.5 and Speed > 30) or (Slope <= -0.5 and Speed > 40) then
+                Controller(3,Train)
+            end
+        else
+            --Train[808] = 1
+        end
+    end
+    Train[1032] = tonumber(((Train[1]>0 or Train[6]>0) and Train[18]<1 and On[1]>0))
+    Train[65536*WagNum+1032] = tonumber(((Train[1]>0 or Train[6]>0) and Train[18]<1 and On[2]>0))
+    --Train[808] = 0
+    if not Brake and not Accelerate then
+        if Speed < 5 then
+            Train[29] = 1
+        else
+            Train[29] = 0
+        end
+        Controller(0,Train)
+    end
+    -- Braking
+    if Brake then
+        if sbor(false,Train) then
+            Train[29] = 0
+            if Slope < 0.5 then
+                --if Speed<58 then
+                    Controller(-3,Train)
+                --else
+                    --Controller(-3,Train)
+                --end
+            else
+                local RKPos = math.round(math.abs(Slope))
+                Controller(-2,Train)
+                if Speed<=50 then
+                    if RK<RKPos then
+                        Controller(-3,Train)
+                    end
+                end
+            end
+        else
+            Controller(-1,Train)
+            if Slope > 0.5 then
+                Train[29] = 1
+            end
+        end
+    end
+    ---[[
+    wire.ports.Test = {
+            ConPos =        ConPos,
+            RK =            RK,
+            stationDist =   stationDist,
+            stationRK =     stationRk(stationDist),
+            station =       tostring(station),
+    }
+    wire.ports.Test1 = {
+            Accelerate =    tostring(Accelerate),
+            Brake =    tostring(Brake),
+            ChipLimit =     SpeedLimit,
+            Slope =    Slope,
+            RMaS =    tostring(RMaS),
+    }--]]
+    --local
+end
+
+data(
+    function(key,_,new)
+        if key == "Doors" and new then
+            local Time = 30
+            timer.simple(Time-12,function() RIU.Arrive = true end)            
+        end
+        if key == "infNum" and new == 218 then 
+            KSZD(RIU.Train,Num)
+        end
+    end
+)
+--hook.add("think","AUTO"..ents.self():entIndex(),think)
+timer.create("AUTO"..ents.self():entIndex(),0.1,0,think)
+editTrainButtons()
