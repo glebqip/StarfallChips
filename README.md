@@ -1,4 +1,2 @@
-StarfallChips
+Starfall Chips from glebqip
 =============
-
-Starfall cihps from glebqip
