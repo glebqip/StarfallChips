@@ -18,7 +18,8 @@ Tooltypes:
 
 lib - special libs(big thanks to Mijyuoon)
 
-dialing_computer - Dialing computer screen from first 2 seasons of stargate series
+dialing_computer
+	Dialing computer screen from first 2 seasons of stargate series
   Inputs:
     Stargare - stargate wirelink input, connect to stargate
     Keyboard - keyboard input, connect to keyboard Memory output
@@ -34,7 +35,8 @@ dialing_computer - Dialing computer screen from first 2 seasons of stargate seri
       2 - to fast dialing mode
       3 - to nox dialing mode
 
-address_book - Address book screen from first 2 seasons of stargate series
+address_book
+	Address book screen from first 2 seasons of stargate series
   Inputs:
     Stargare - stargate wirelink input, connect to stargate
   Outputs:
@@ -44,17 +46,20 @@ address_book - Address book screen from first 2 seasons of stargate series
     Left and Right arrow to choose address.
     Enter to send address to Dialing computer(AddrOut), or start dialing if pressed again.
 
-idc_screen - IDC screen from first 2 seasons of stargate series
+idc_screen
+	IDC screen from first 2 seasons of stargate series
   (unfinished)
 
-vityaz - Vityaz screen(http://ic.pics.livejournal.com/drugoi/484155/2426194/2426194_original.jpg)
+vityaz
+	Vityaz screen(http://ic.pics.livejournal.com/drugoi/484155/2426194/2426194_original.jpg)
   Inputs:
     Train - Train input, connect to 81-717 train
   Outputs:
     Test  - debug output
   (unfinished)
 
-autodrive(proc) - 81-717 autodrive system(uses autodrive_informator)
+autodrive(proc) 
+	81-717 autodrive system(uses autodrive_informator)
   Inputs:
     Train     - first wagon input, connect to first wagon
     TrainLast - last wagon input, connect to last wagon
