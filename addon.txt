@@ -1,0 +1,9 @@
+"AddonInfo"
+{
+	"name"        "Starfall Chips"
+	"version"     "1"
+	"author_name" "glebqip(RUS),Mijyuoon"
+	"author_url"  "https://github.com/glebqip/StarfallChips"
+	"info"        "Some starfall shit chips"
+	"override"    "0"
+}
