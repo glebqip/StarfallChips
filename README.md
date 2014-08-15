@@ -1,3 +1,4 @@
+
 Starfall Chips from glebqip
 =============
 
@@ -10,12 +11,10 @@ Chiptypes:
   sub - Metrostroi chips(link:http://steamcommunity.com/sharedfiles/filedetails/?id=261801217)
   stargate - CAP chips(link:http://facepunch.com/showthread.php?t=1250181)
   Warning: stargate chips may not work, because they are be created for older version of CAP
-
 Tooltypes:
   proc - Starfall Processor
   remote - Starfall Remote
   screen - Starfall Screen
-
 lib - special libs(big thanks to Mijyuoon)
 
 dialing_computer - Dialing computer screen from first 2 seasons of stargate series
