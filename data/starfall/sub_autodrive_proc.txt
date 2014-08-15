@@ -1,13 +1,13 @@
 --@name Aurodrive
 --@author glebqip(RUS)
---@include sub_autodrive_informator
+--@include sub_autodrive_informator_proc
 --@include Lib/RTable
 
 local wire = loadLibrary "wire"
 local hook = loadLibrary "hook"
 local timer = loadLibrary "timer"
 local ents = loadLibrary "ents"
-local RIU = require "sub_autodrive_informator"
+local RIU = require "sub_autodrive_informator_proc"
 local R = require "Lib/RTable"
 
 local tonum = tonumber
