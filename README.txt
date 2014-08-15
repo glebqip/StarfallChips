@@ -15,6 +15,7 @@ Tooltypes:
   proc - Starfall Processor
   remote - Starfall Remote
   screen - Starfall Screen
+
 lib - special libs(big thanks to Mijyuoon)
 
 dialing_computer - Dialing computer screen from first 2 seasons of stargate series
@@ -32,6 +33,7 @@ dialing_computer - Dialing computer screen from first 2 seasons of stargate seri
       1 - to standart dialing mode
       2 - to fast dialing mode
       3 - to nox dialing mode
+
 address_book - Address book screen from first 2 seasons of stargate series
   Inputs:
     Stargare - stargate wirelink input, connect to stargate
@@ -41,6 +43,7 @@ address_book - Address book screen from first 2 seasons of stargate series
     Up and Down arrow to scrool addresses.
     Left and Right arrow to choose address.
     Enter to send address to Dialing computer(AddrOut), or start dialing if pressed again.
+
 idc_screen - IDC screen from first 2 seasons of stargate series
   (unfinished)
 
