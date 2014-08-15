@@ -5,6 +5,7 @@ Uses Mujyuoon starfall:
   https://github.com/Mijyuoon/starfall
 
 Chips have a unique name:chiptype_*_tooltype(_unfinished)
+
 Chiptypes:
   sub - Metrostroi chips(link:http://steamcommunity.com/sharedfiles/filedetails/?id=261801217)
   stargate - CAP chips(link:http://facepunch.com/showthread.php?t=1250181)
