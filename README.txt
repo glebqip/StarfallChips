@@ -2,7 +2,7 @@
 Starfall Chips from glebqip
 =============
 
-Uses Mujyuoon starfall:
+Created for Mujyuoon starfall:
   https://github.com/Mijyuoon/starfall
 
 Chips have a unique name:chiptype_*_tooltype(_unfinished)
