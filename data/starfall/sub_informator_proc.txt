@@ -118,9 +118,10 @@ local Stations =
     [119] = {"Sineozernaya",            false,true ,false,false,0   },
     --[120] = {"Lesnaya",                 -1                          },
     [121] = {"Minskaya",                false,false,true,true  ,0   },
+    [122] = {"Tsarskiye Vorota",        false,true,true,true   ,0   },
 }
 
-local EStations = {109,111,112,113,114,116,121}
+local EStations = {109,111,112,113,114,116,121,122}
 
 wire.adjustInputs(
     {"Train"},
@@ -152,7 +153,8 @@ local function editTrainButtons()
     for i2=0,1 do
         for i=2,6 do
             for i1=1,16 do
-                wire.ports.Train[i2*wagNum*65536+32767+32*(i<5 and i or i+7)+i1] = i1<=#tN[i-1] and string.byte(tN[i-1][i1]) or 0
+                wire.ports.Train[32767+32*(i<5 and i or i+7)+i1] = i1<=#tN[i-1] and string.byte(tN[i-1][i1]) or 0
+                wire.ports.Train[wagNum*65536+32767+32*(i<5 and i or i+7)+i1] = i1<=#tN[i-1] and string.byte(tN[i-1][i1]) or 0
             end
         end
     end
@@ -494,6 +496,7 @@ local function getInputs()
     wagNum = wagNum-1
     for i=0,1 do
         data["On"..i+1] = wire.ports.Train[i*wagNum*65536+1029]>0 and wire.ports.Train[i*wagNum*65536+10]>0 and wire.ports.Train[i*wagNum*65536+5]>0
+        if not data["On"..i+1] then continue end
         data["ProgramI"..i+1]  = data["On"..i+1] and wire.ports.Train[i*wagNum*65536+1074]>0 or false
         data["ProgramII"..i+1] = data["On"..i+1] and wire.ports.Train[i*wagNum*65536+1084]>0 or false
         data["Minus"..i+1] = data["On"..i+1] and wire.ports.Train[i*wagNum*65536+979]>0 or false
@@ -636,6 +639,6 @@ data(
 )
 
 --hook.add("think","RIUButtons",getInputs)
-hook.add("think","RIUstr",str)
-timer.create("RIUButtons",0.1,0,getInputs)
+--hook.add("think","RIUstr",str)
+timer.create("RIUButtons",0.1,0,function() getInputs() str() end)
 --timer.create("RIUstr",0.1,0,str)
