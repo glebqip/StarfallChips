@@ -205,6 +205,7 @@ if SERVER then
         BlockConnect = false
         if ply ~= self:owner() then return end
         if key == 32 then
+            if not ply:isAlive() then return end
             local weapon = ply:getActiveWeapon()
             if weapon:find("sf_remote") then
                 if Traine and Traine:isValid() then 
@@ -218,7 +219,7 @@ if SERVER then
     end)
          
     hook.add("PlayerUse", "Use"..ID, function(ply, ent)
-        if ply ~= self:owner() or BlockConnect then return end
+        if ply ~= self:owner() or BlockConnect or not ply:isAlive() then return end
         local weapon = ply:getActiveWeapon()
         if weapon:find("sf_remote") then
             if ent and ent:isValid() and ent:getClass():find("gmod_subway_") and Traine ~= ent then 
@@ -1211,6 +1212,7 @@ else
         end
         if (str == "AVU" or str == "LSD") and find.canFind() and Net.Batt > 60 then
             for _,ply in pairs(find.allPlayers()) do
+                if not ply:isAlive() then return end
                 local weapon = ply:getActiveWeapon()
                 if weapon:find("sf_remote") then
                     snd.emitEntity(ply, "subway_trains/relay_"..(Net[str] and math.random(2,3) or 1)..".wav")
